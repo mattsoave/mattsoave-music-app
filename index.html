@@ -35,6 +35,10 @@
     --on-good-container: #0b2a0d;
     --paper: #fffdf8; /* sheet music and white keys stay light in dark mode */
     --ink: #1a1b20;
+    /* Colors for notes on the staff. Fixed, like the paper, so they read the same in dark mode. */
+    --note-current: #00838f;
+    --note-done: #2e7d32;
+    --note-wrong: #c62828;
     --md-ref-typeface-brand: Roboto, system-ui, sans-serif;
     --md-ref-typeface-plain: Roboto, system-ui, sans-serif;
   }
@@ -64,6 +68,11 @@
     }
   }
   * { box-sizing: border-box; }
+  /* Touch screens keep :hover on the last element tapped, and Material raises a hovered button with a shadow.
+     That left a shadow on the answer you just picked, so turn the hover shadow off where there is no mouse. */
+  @media (hover: none) {
+    :root { --md-filled-tonal-button-hover-container-elevation: 0; --md-filled-button-hover-container-elevation: 0; }
+  }
   html { -webkit-text-size-adjust: 100%; }
   body { margin: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-ref-typeface-plain); }
   main { max-width: 560px; margin: 0 auto; padding: 8px 16px calc(112px + env(safe-area-inset-bottom)); }
@@ -95,6 +104,8 @@
   /* Staff */
   .staff-box { background: var(--paper); color: var(--ink); border-radius: 14px; padding: 6px; max-width: 360px; margin: 0 auto; min-height: 120px; }
   .staff-box svg.staff { width: 100%; height: auto; display: block; }
+  .staff-box.melody { max-width: 420px; }
+  .midi-hint { margin-top: 8px; }
   .big-name { padding: 44px 0; text-align: center; }
 
   /* Answer buttons */

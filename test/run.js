@@ -78,6 +78,93 @@ ok('midi messages', () => {
   assert.equal(M.parseMessage([0xf8]), null); // clock tick
 });
 
+// ---- chord recognition and held keys ----
+import * as R from '../reading.js';
+const lcg = (seed) => () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+
+ok('identify chords in any inversion', () => {
+  assert.deepEqual(T.identifyChord([60, 64, 67]), { rootPc: 0, type: 'maj', bassPc: 0, inversion: 0 });
+  assert.deepEqual(T.identifyChord([64, 67, 72]), { rootPc: 0, type: 'maj', bassPc: 4, inversion: 1 });
+  assert.equal(T.identifyChord([55, 59, 62, 65]).type, 'dom7');
+  assert.equal(T.identifyChord([53, 59, 62, 67]).inversion, 3); // G7 with F in the bass
+  assert.equal(T.identifyChord([57, 60, 64, 72]).type, 'min'); // doubled note is fine
+  assert.equal(T.identifyChord([60, 61]), null);
+  assert.ok(T.samePitchClasses([60, 64, 67], [43, 52, 72]));
+  assert.ok(!T.samePitchClasses([60, 64, 67], [60, 63, 67]));
+});
+ok('held keys tracker', () => {
+  const t = M.chordTracker();
+  t.feed({ type: 'on', midi: 60 });
+  t.feed({ type: 'on', midi: 64 });
+  assert.deepEqual(t.feed({ type: 'on', midi: 67 }).held, [60, 64, 67]);
+  const a = t.feed({ type: 'off', midi: 64 });
+  assert.deepEqual([a.held, a.peak, a.released], [[60, 67], [60, 64, 67], false]);
+  t.feed({ type: 'off', midi: 60 });
+  const b = t.feed({ type: 'off', midi: 67 });
+  assert.deepEqual([b.peak, b.released], [[60, 64, 67], true]);
+  assert.deepEqual(t.feed({ type: 'on', midi: 62 }).peak, [62]); // starts fresh after letting go
+});
+
+// ---- sheet reading questions ----
+ok('chord spelling', () => {
+  assert.deepEqual(R.spellChord('D', 'maj'), ['D', 'F#', 'A']);
+  assert.deepEqual(R.spellChord('Bb', 'min'), ['Bb', 'Db', 'F']);
+  assert.deepEqual(R.spellChord('G', 'dom7'), ['G', 'B', 'D', 'F']);
+  assert.deepEqual(R.spellChord('F#', 'dim'), ['F#', 'A', 'C']);
+  assert.equal(R.spellChord('E', 'aug'), null); // would need B#
+  assert.equal(R.chordSymbol(['D', 'F#', 'A'], 'maj', 1), 'D/F#');
+  assert.equal(R.chordLabel('D', 'maj', 1), 'D major, 1st inversion');
+});
+ok('chords are placed in range with the right bass note', () => {
+  const pc = R.placeChord(['C', 'E', 'G'], 1, 30); // first inversion from E4
+  assert.deepEqual(pc.map((n) => n.midi), [64, 67, 72]);
+  const rand = lcg(7);
+  for (const clef of ['treble', 'bass']) {
+    const { lo, hi } = R.readRange(clef);
+    for (const type of ['maj', 'min', 'dim', 'dom7', 'maj7', 'min7', 'hdim7']) {
+      for (let inv = 0; inv < T.CHORD_TYPES[type].iv.length; inv++) {
+        for (let k = 0; k < 10; k++) {
+          const q = R.makeChord({ clef, type, inversion: inv, rand });
+          assert.ok(q, `${clef} ${type} ${inv}`);
+          assert.ok(q.notes.every((n) => n.step >= lo && n.step <= hi), `${clef} ${type} out of range`);
+          const id = T.identifyChord(q.notes.map((n) => n.midi));
+          assert.equal(id.type, type);
+          assert.equal(id.inversion, q.inversion);
+          const choices = R.chordChoices(q, { rand });
+          assert.equal(choices.length, 4);
+          assert.equal(new Set(choices.map((c) => c.value)).size, 4);
+          assert.ok(choices.some((c) => c.value === `${q.root}|${q.type}|${q.inversion}`));
+        }
+      }
+    }
+  }
+});
+ok('interval pairs', () => {
+  const pairs = R.intervalPairs('treble');
+  assert.ok(pairs.every((p) => p.short && p.semi >= 1 && p.semi <= 12));
+  const e4f4 = pairs.find((p) => p.lo === 30 && p.number === 1);
+  assert.equal(e4f4.short, 'm2');
+  assert.equal(new Set(pairs.map((p) => p.short)).size, 12);
+  assert.equal(R.intervalNumberName(2), '3rd');
+});
+ok('melodies stay in range, follow the key and end on the tonic', () => {
+  const rand = lcg(42);
+  for (const clef of ['treble', 'bass']) {
+    const { lo, hi } = R.readRange(clef);
+    for (const keyId of ['C', 'D', 'Bb', 'E', 'Ab']) {
+      const scale = T.scaleNotes(keyId);
+      for (let k = 0; k < 20; k++) {
+        const m = R.makeMelody({ clef, keyId, length: 8, rand });
+        assert.equal(m.notes.length, 8);
+        assert.ok(m.notes.every((n) => n.step >= lo && n.step <= hi));
+        assert.equal(m.notes[7].letter, scale[0][0]);
+        for (const n of m.notes) assert.equal(((n.midi % 12) + 12) % 12, T.notePc(scale.find((x) => x[0] === n.letter)));
+      }
+    }
+  }
+  assert.equal(R.makeMelody({ clef: 'treble', keyId: 'G', length: 4, rand }).notes.length, 4);
+});
+
 // ---- chart parsing ----
 const SAMPLE = `https://tabs.ultimate-guitar.com/tab/some-artist/some-song-chords-123
 [Intro]

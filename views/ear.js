@@ -1,12 +1,13 @@
 // Ear training: intervals, chord qualities, chords in a key, and chord progressions.
 
 import {
-  INTERVALS, CHORD_TYPES, NUMERAL_CHORDS, PROGRESSIONS, numeralPcs, voiceChord, pretty, noteName,
+  INTERVALS, CHORD_TYPES, NUMERAL_CHORDS, PROGRESSIONS, numeralPcs, voiceChord, pretty, noteName, identifyChord,
 } from '../theory.js';
 import { pick, record } from '../srs.js';
 import { playSequence } from '../audio.js';
+import { onNote, chordTracker } from '../midi.js';
 import * as store from '../store.js';
-import { h, clear, card, hint, button, segmented, chips, choices, keyboard } from '../ui.js';
+import { h, clear, card, hint, button, segmented, chips, choices, keyboard, midiHint, releaseFocus } from '../ui.js';
 
 const QUALITIES = ['maj', 'min', 'dim', 'aug', 'dom7', 'maj7', 'min7', 'hdim7'];
 const DEFAULTS = {
@@ -36,6 +37,7 @@ export function mount(root) {
   let startedAt = 0;
   let autoplay = false;
   let ans = null;
+  let offMidi = () => {};
 
   const body = h('div');
   root.append(body);
@@ -45,6 +47,7 @@ export function mount(root) {
   function render() {
     stopAudio();
     clearTimeout(timer);
+    offMidi();
     clear(body);
     const kind = s.mode === 'chord' ? (s.chordKind === 'inkey' ? 'inkey' : 'quality') : s.mode;
     const modeSwitch = segmented([
@@ -72,8 +75,8 @@ export function mount(root) {
       if (kind === 'interval') {
         const root = ctx.root;
         const top = root + item.semi;
-        if (s.direction === 'harm') return [{ notes: [root, top], beats: 2 }];
-        return s.direction === 'down'
+        if (ctx.dir === 'harm') return [{ notes: [root, top], beats: 2 }];
+        return ctx.dir === 'down'
           ? [{ notes: [top], beats: 1 }, { notes: [root], beats: 1.6 }]
           : [{ notes: [root], beats: 1 }, { notes: [top], beats: 1.6 }];
       }
@@ -118,7 +121,9 @@ export function mount(root) {
         return;
       }
       const item = pick(pool, (i) => stats[i.id], q && q.item.id);
-      const ctx = { tonic: Math.floor(Math.random() * 12), root: 48 + Math.floor(Math.random() * 14) };
+      // "Mixed" picks up or down for each question, still played one note after the other.
+      const dir = s.direction === 'mixed' ? (Math.random() < 0.5 ? 'up' : 'down') : s.direction;
+      const ctx = { tonic: Math.floor(Math.random() * 12), root: 48 + Math.floor(Math.random() * 14), dir };
       if (kind === 'quality') {
         const iv = CHORD_TYPES[item.type].iv;
         const r = 48 + Math.floor(Math.random() * 12);
@@ -126,6 +131,9 @@ export function mount(root) {
       }
       q = { item, ctx, steps: stepsFor(item, ctx) };
       answered = false;
+      firstNote = null;
+      skipRelease = heldNow.length > 0;
+      releaseFocus(answerHost);
       startedAt = performance.now();
       kb.clearMarks();
       feedback.textContent = '';
@@ -169,8 +177,9 @@ export function mount(root) {
         extra.textContent = `Think of: ${q.item.hint}.`;
         kb.mark([q.ctx.root, q.ctx.root + q.item.semi], 'good');
         kb.scrollTo(q.ctx.root);
-        const notes = s.direction === 'down' ? [q.ctx.root + q.item.semi, q.ctx.root] : [q.ctx.root, q.ctx.root + q.item.semi];
-        name += ` (${notes.map((m) => pretty(noteName(m))).join(' to ')})`;
+        const notes = q.ctx.dir === 'down' ? [q.ctx.root + q.item.semi, q.ctx.root] : [q.ctx.root, q.ctx.root + q.item.semi];
+        const way = q.ctx.dir === 'harm' ? 'together' : q.ctx.dir;
+        name += `, ${way} (${notes.map((m) => pretty(noteName(m))).join(' to ')})`;
       } else if (kind === 'quality') {
         name = capitalize(CHORD_TYPES[q.item.type].label);
         kb.mark(q.ctx.notes, 'good');
@@ -194,7 +203,7 @@ export function mount(root) {
       if (s.mode === 'interval') {
         out.push(
           h('p', { class: 'label md-typescale-label-large' }, 'Play'),
-          segmented([{ value: 'up', label: 'Up' }, { value: 'down', label: 'Down' }, { value: 'harm', label: 'Together' }], s.direction, (v) => { s.direction = v; save(); next(); }),
+          segmented([{ value: 'up', label: 'Up' }, { value: 'down', label: 'Down' }, { value: 'mixed', label: 'Mixed' }, { value: 'harm', label: 'Together' }], s.direction, (v) => { s.direction = v; save(); next(); }),
           h('p', { class: 'label md-typescale-label-large' }, 'Intervals to practice'),
           chips(INTERVALS.map((i) => ({ value: i.short, label: i.short + ' ' + i.name.replace(/ (\d)/, ' $1') })), s.enabled.interval, (v) => { s.enabled.interval = v; save(); next(); }),
         );
@@ -220,12 +229,43 @@ export function mount(root) {
       return out;
     }
 
+    // A MIDI keyboard can answer intervals (play any two notes that far apart) and chord sounds (play any
+    // chord of that kind). The other modes are tap only.
+    let firstNote = null;
+    let heldNow = [];
+    let skipRelease = false;
+    const tracker = chordTracker();
+    offMidi = onNote((ev) => {
+      if (!q) return;
+      if (kind === 'interval') {
+        if (ev.type !== 'on' || answered) return;
+        if (firstNote === null) { firstNote = ev.midi; return; }
+        let semi = Math.abs(ev.midi - firstNote);
+        if (semi === 0) return;
+        while (semi > 12) semi -= 12;
+        firstNote = null;
+        onPick(INTERVALS.find((i) => i.semi === semi).short);
+      } else if (kind === 'quality') {
+        const r = tracker.feed(ev);
+        heldNow = r.held;
+        if (answered) return;
+        const now = identifyChord(r.held);
+        if (now && now.type === q.item.type) { onPick(q.item.type); return; }
+        if (!r.released) return;
+        if (skipRelease) { skipRelease = false; return; }
+        if (r.peak.length >= 3) { const id = identifyChord(r.peak); onPick(id ? id.type : 'none'); }
+      }
+    });
+    const midiText = kind === 'interval' ? 'You can also answer by playing any two notes that far apart on your keyboard.'
+      : kind === 'quality' ? 'You can also answer by playing a chord of that kind on your keyboard, in any key.' : null;
+
     body.append(
       h('div', { class: 'top-switch' }, modeSwitch),
       card('Listen',
         h('div', { class: 'actions' }, playBtn, nextBtn),
         prompt, feedback, answerHost, extra,
         showKb ? kb.el : null,
+        midiText ? midiHint(midiText) : null,
       ),
       settingsCard,
     );
@@ -233,7 +273,7 @@ export function mount(root) {
   }
 
   render();
-  return () => { stopAudio(); clearTimeout(timer); };
+  return () => { stopAudio(); clearTimeout(timer); offMidi(); };
 }
 
 const capitalize = (t) => t.charAt(0).toUpperCase() + t.slice(1);

@@ -21,6 +21,31 @@ export function parseMessage(data) {
   return null;
 }
 
+/**
+ * Follow which keys are down, for answers that need several notes at once. feed(ev) returns
+ * { held, peak, released }: the keys down now, the most keys held together since everything was last let go,
+ * and whether this event let go of the last key. Pure, so it can be tested in Node.
+ */
+export function chordTracker() {
+  const held = new Set();
+  let peak = new Set();
+  const sorted = (s) => [...s].sort((a, b) => a - b);
+  return {
+    feed(ev) {
+      if (ev.type === 'on') {
+        held.add(ev.midi);
+        if (held.size >= peak.size) peak = new Set(held);
+      } else {
+        held.delete(ev.midi);
+      }
+      const out = { held: sorted(held), peak: sorted(peak), released: ev.type === 'off' && held.size === 0 };
+      if (out.released) peak = new Set();
+      return out;
+    },
+    reset() { held.clear(); peak = new Set(); },
+  };
+}
+
 export const supported = () => typeof navigator !== 'undefined' && typeof navigator.requestMIDIAccess === 'function';
 
 /** Subscribe to notes from any connected keyboard. fn receives { type, midi, velocity }. Returns an unsubscribe function. */
@@ -52,6 +77,7 @@ export async function connect() {
     access.onstatechange = () => { bindInputs(); deviceListeners.forEach((fn) => fn(devices())); };
   }
   bindInputs();
+  deviceListeners.forEach((fn) => fn(devices())); // so screens and hints update after connecting
   return devices();
 }
 

@@ -10,12 +10,13 @@ import * as songs from './views/songs.js';
 import * as midi from './views/midi.js';
 import { mountFeedback } from './feedback.js';
 import { importBackupText } from './views/songs.js';
+import { initSound } from './sound.js';
 
-const VERSION = 4;
+const VERSION = 5;
 
 const ICON = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const TABS = [
-  { id: 'notes', label: 'Notes', title: 'Read notes', view: notes, icon: ICON('M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z') },
+  { id: 'notes', label: 'Read', title: 'Read music', view: notes, icon: ICON('M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z') },
   { id: 'keys', label: 'Keys', title: 'Keys and chords', view: keys, icon: ICON('M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z') },
   { id: 'ear', label: 'Ear', title: 'Ear training', view: ear, icon: ICON('M12 3a9 9 0 0 0-9 9v7a2 2 0 0 0 2 2h2v-8H5v-1a7 7 0 0 1 14 0v1h-2v8h2a2 2 0 0 0 2-2v-7a9 9 0 0 0-9-9z') },
   { id: 'metronome', label: 'Metronome', title: 'Metronome', view: metronome, icon: ICON('M12 2 5 22h14L12 2zm0 5.5L16 20H8l4-12.5z') },
@@ -27,6 +28,7 @@ const viewEl = document.getElementById('view');
 const titleEl = document.getElementById('title');
 let teardown = null;
 let current = -1;
+initSound();
 
 function show(i) {
   if (i === current) return;

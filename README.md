@@ -2,10 +2,11 @@
 
 A small installable web app (PWA) for practicing piano. It works offline and keeps everything on your device.
 
-- **Notes**: treble and bass clef flashcards. Notes you miss or answer slowly come up more often. Answer by naming the note or by tapping the key.
+- **Read**: notes, intervals and chords (with inversions) on the treble or bass staff, plus short made-up melodies to play note by note. Notes you miss come up more often. Answer by tapping or by playing on a MIDI keyboard.
 - **Keys**: key signature quizzes, and the chords in any key with Roman numerals. Tap a chord to hear it.
 - **Ear**: intervals, chord sounds, chords in a key, and chord progressions.
 - **Metronome**: tempo, beats per bar, subdivisions, tap tempo, and a looping backing chord progression (pick a key and progression) to improvise over, with the click optional.
+- **MIDI**: connect a USB keyboard to answer quizzes by playing, see the keys you press, and choose the instrument sound for the whole app.
 - **Songs**: paste a chord chart (such as from Ultimate Guitar), keep a link to the original page, and view it as chords and lyrics, chords only, or Roman numerals. Songs stay on your device. Use Export songs for a backup file.
 
 ## Run it locally

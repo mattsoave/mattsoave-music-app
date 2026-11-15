@@ -224,3 +224,29 @@ export function voiceChord(pcs, prevUpper = null) {
   while (bass < 36) bass += 12;
   return { bass, upper: best.notes };
 }
+
+/**
+ * Name the chord in a set of MIDI notes, in any octave or inversion. Repeated pitch classes are ignored and
+ * the lowest note sets the inversion. Returns { rootPc, type, bassPc, inversion } or null if it is not a known chord.
+ */
+export function identifyChord(midis) {
+  if (!midis || !midis.length) return null;
+  const bassPc = ((Math.min(...midis) % 12) + 12) % 12;
+  const pcs = [...new Set(midis.map((m) => ((m % 12) + 12) % 12))];
+  for (const rootPc of pcs) {
+    const rel = pcs.map((p) => (p - rootPc + 12) % 12).sort((a, b) => a - b);
+    for (const [type, t] of Object.entries(CHORD_TYPES)) {
+      if (t.iv.length === rel.length && t.iv.every((x, i) => x === rel[i])) {
+        return { rootPc, type, bassPc, inversion: t.iv.indexOf((bassPc - rootPc + 12) % 12) };
+      }
+    }
+  }
+  return null;
+}
+
+/** True when two lists of notes have the same pitch classes, ignoring octave and order. */
+export function samePitchClasses(a, b) {
+  const pa = new Set(a.map((m) => ((m % 12) + 12) % 12));
+  const pb = new Set(b.map((m) => ((m % 12) + 12) % 12));
+  return pa.size === pb.size && [...pa].every((p) => pb.has(p));
+}

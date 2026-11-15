@@ -1,11 +1,29 @@
-// Sound: a small piano-like synth and the metronome clock, both on the Web Audio API.
+// Sound: a few synthesized instruments and the metronome clock, all on the Web Audio API (no sample files).
 // Browsers only allow sound after a tap, so the audio context is created on first use.
 
 import { midiToFreq } from './theory.js';
 
 let ctx = null;
 let master = null;
-let wave = null;
+const waves = {};
+
+export const INSTRUMENTS = [
+  { id: 'piano', label: 'Piano' },
+  { id: 'epiano', label: 'Electric piano' },
+  { id: 'organ', label: 'Organ' },
+  { id: 'strings', label: 'Strings' },
+  { id: 'synth', label: 'Soft synth' },
+];
+let instrument = 'piano';
+export function setInstrument(id) { if (INSTRUMENTS.some((i) => i.id === id)) instrument = id; }
+export const getInstrument = () => instrument;
+
+// Sounds that hold steady while a key is down, then fade: level, attack and release in seconds.
+const HELD = {
+  organ: { level: 0.5, attack: 0.012, release: 0.06 },
+  strings: { level: 0.3, attack: 0.18, release: 0.4 },
+  synth: { level: 0.55, attack: 0.015, release: 0.18 },
+};
 
 export function audio() {
   if (!ctx) {
@@ -15,9 +33,11 @@ export function audio() {
     const comp = ctx.createDynamicsCompressor();
     master.connect(comp);
     comp.connect(ctx.destination);
-    // A few harmonics with a soft top end reads as "keys" without any sample files.
-    const imag = new Float32Array([0, 1, 0.45, 0.28, 0.14, 0.07, 0.03]);
-    wave = ctx.createPeriodicWave(new Float32Array(imag.length), imag);
+    // Each wave is a list of harmonic strengths. A soft top end reads as "keys" without any sample files.
+    const wave = (h) => ctx.createPeriodicWave(new Float32Array(h.length), new Float32Array(h));
+    waves.piano = wave([0, 1, 0.45, 0.28, 0.14, 0.07, 0.03]);
+    waves.epiano = wave([0, 1, 0.12, 0.04]);
+    waves.organ = wave([0, 1, 0.75, 0, 0.5, 0, 0.3, 0, 0.25]);
   }
   if (ctx.state === 'suspended') ctx.resume();
   return ctx;
@@ -25,30 +45,75 @@ export function audio() {
 
 export const now = () => audio().currentTime;
 
-/** Play one note. `when` is in audio-clock seconds. Returns a function that stops it early. */
-export function playNote(midi, { when = null, dur = 1.2, vel = 0.5, release = 0.08 } = {}) {
+/**
+ * Play one note with the current instrument. `when` is in audio-clock seconds and `dur` is how long it is held.
+ * With `hold: true` the note keeps sounding until the returned stop function is called (for a key held down).
+ */
+export function playNote(midi, { when = null, dur = 1.2, vel = 0.5, release = 0.08, hold = false } = {}) {
   const c = audio();
   const t = when === null ? c.currentTime + 0.01 : when;
-  const osc = c.createOscillator();
-  osc.setPeriodicWave(wave);
-  osc.frequency.value = midiToFreq(midi);
+  const f = midiToFreq(midi);
+  const inst = instrument;
   const g = c.createGain();
-  // Higher notes ring shorter, like a real piano.
-  const ring = Math.max(0.35, dur * (1.15 - (midi - 36) / 90));
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(vel, t + 0.006);
-  g.gain.exponentialRampToValueAtTime(vel * 0.35, t + Math.min(0.35, ring * 0.3));
-  g.gain.exponentialRampToValueAtTime(0.0001, t + ring);
-  osc.connect(g);
   g.connect(master);
-  osc.start(t);
-  osc.stop(t + ring + 0.05);
+  const oscs = [];
+  const osc = (freq, type) => {
+    const o = c.createOscillator();
+    if (waves[type]) o.setPeriodicWave(waves[type]); else o.type = type;
+    o.frequency.value = freq;
+    oscs.push(o);
+    return o;
+  };
+  let end;
+  const held = HELD[inst];
+  if (!held) {
+    // Piano and electric piano fade on their own. Higher notes ring shorter, like a real piano.
+    const ring = Math.max(0.35, (hold ? 8 : dur) * (1.15 - (midi - 36) / 90)) * (inst === 'epiano' ? 1.3 : 1);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vel, t + (inst === 'epiano' ? 0.003 : 0.006));
+    g.gain.exponentialRampToValueAtTime(vel * (inst === 'epiano' ? 0.45 : 0.35), t + Math.min(0.35, ring * 0.3));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + ring);
+    osc(f, inst).connect(g);
+    if (inst === 'epiano') {
+      // A short bell-like tine at the start of each note.
+      const tg = c.createGain();
+      tg.gain.setValueAtTime(vel * 0.25, t);
+      tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      tg.connect(master);
+      osc(f * 4, 'sine').connect(tg);
+    }
+    end = t + ring;
+  } else {
+    const level = vel * held.level;
+    const off = hold ? t + 60 : t + Math.max(dur, held.attack + 0.05);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(level, t + held.attack);
+    g.gain.setValueAtTime(level, off);
+    g.gain.exponentialRampToValueAtTime(0.0001, off + held.release);
+    if (inst === 'strings') {
+      const lp = c.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = Math.min(5000, f * 5);
+      lp.Q.value = 0.5;
+      lp.connect(g);
+      osc(f, 'sawtooth').connect(lp);
+      const o2 = osc(f, 'sawtooth');
+      o2.detune.value = 8; // two slightly detuned voices sound like a section
+      o2.connect(lp);
+    } else {
+      osc(f, inst === 'organ' ? 'organ' : 'triangle').connect(g);
+    }
+    end = off + held.release;
+  }
+  oscs.forEach((o) => { o.start(t); o.stop(end + 0.05); });
+  const rel = held ? held.release : release;
   return () => {
     try {
-      g.gain.cancelScheduledValues(c.currentTime);
-      g.gain.setValueAtTime(Math.max(g.gain.value, 0.0001), c.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + release);
-      osc.stop(c.currentTime + release + 0.02);
+      const n = c.currentTime;
+      g.gain.cancelScheduledValues(n);
+      g.gain.setValueAtTime(Math.max(g.gain.value, 0.0001), n);
+      g.gain.exponentialRampToValueAtTime(0.0001, n + rel);
+      oscs.forEach((o) => o.stop(n + rel + 0.02));
     } catch { /* already stopped */ }
   };
 }

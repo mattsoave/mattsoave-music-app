@@ -1,8 +1,9 @@
 // Small UI helpers shared by every screen: element builder, Material controls, staff drawing, keyboard.
 
-import { Renderer, Stave, StaveNote, Voice, Formatter } from './vendor/vexflow.js';
+import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental } from './vendor/vexflow.js';
 import { stepVexKey, pretty } from './theory.js';
 import { playNote } from './audio.js';
+import { devices, onDevicesChange } from './midi.js';
 
 export { pretty };
 
@@ -105,30 +106,80 @@ export function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+/** A hint line that shows only while a MIDI keyboard is connected. */
+export function midiHint(text) {
+  const el = h('p', { class: 'hint md-typescale-body-small midi-hint' }, text);
+  el.hidden = !devices().length;
+  const off = onDevicesChange((list) => {
+    if (!el.isConnected) { off(); return; }
+    el.hidden = !list.length;
+  });
+  return el;
+}
+
+/** Move focus off an answer button that is about to be reused, so it does not keep a focus or pressed look. */
+export function releaseFocus(container) {
+  let a = document.activeElement;
+  if (!a || !container.contains(a)) return;
+  while (a.shadowRoot && a.shadowRoot.activeElement) a = a.shadowRoot.activeElement; // Material buttons focus inside
+  if (a.blur) a.blur();
+}
+
 // ---- Staff (VexFlow) ----
 
+const ACCIDENTAL = { 1: '#', '-1': 'b', 0: 'n' };
+
+// Note colors are fixed, like the paper behind them, and set in the theme block in index.html.
+function noteColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name) => cs.getPropertyValue(name).trim();
+  return { current: v('--note-current'), done: v('--note-done'), wrong: v('--note-wrong') };
+}
+
 /**
- * Draw a staff. opts: { clef: 'treble'|'bass', step?: number (a note), keySig?: 'D' or 'Bm' }
- * The SVG scales to the width of its container.
+ * Draw a staff. The SVG scales to the width of its container. Options:
+ * - clef: 'treble' or 'bass'; keySig: a key id such as 'D' or 'Bm'
+ * - step: one whole note (a step number), or
+ * - notes: [{ steps: [step], accs: [1, -1, 0 or null], duration: 'w' | 'h' | 'q', color: 'current' | 'done' | 'wrong' }]
+ *   Each staff holds exactly four beats: one whole note, two half notes, or four quarter notes.
+ * - rows: several lists of notes, drawn as staves stacked under each other.
  */
-export function drawStaff(container, { clef = 'treble', step = null, keySig = null } = {}) {
+export function drawStaff(container, { clef = 'treble', step = null, keySig = null, notes = null, rows = null, width = null } = {}) {
   clear(container);
-  const w = keySig ? 260 : 220;
-  const ht = 170;
+  const lines = rows || [notes || (step !== null ? [{ steps: [step], duration: 'w' }] : [])];
+  const w = width || (keySig ? 260 : 220);
+  const single = lines.length === 1;
+  const top = single ? 45 : 18;
+  const rowH = 108;
+  const ht = single ? 170 : top + rowH * lines.length + 20;
   const r = new Renderer(container, Renderer.Backends.SVG);
   r.resize(w, ht);
   const ctx = r.getContext();
-  const stave = new Stave(4, 45, w - 8);
-  stave.addClef(clef);
-  if (keySig) stave.addKeySignature(keySig);
-  stave.setContext(ctx).draw();
-  if (step !== null) {
-    const note = new StaveNote({ keys: [stepVexKey(step)], duration: 'w', clef });
+  const colors = noteColors();
+  lines.forEach((line, row) => {
+    const stave = new Stave(4, top + row * rowH, w - 8);
+    stave.addClef(clef);
+    if (keySig) stave.addKeySignature(keySig);
+    stave.setContext(ctx).draw();
+    if (!line.length) return;
+    const vfNotes = line.map((n) => {
+      const order = n.steps.map((s, i) => ({ s, a: n.accs ? n.accs[i] : null })).sort((x, y) => x.s - y.s);
+      const sn = new StaveNote({ keys: order.map((o) => stepVexKey(o.s)), duration: n.duration || 'w', clef, autoStem: true });
+      order.forEach((o, i) => { if (o.a !== null && o.a !== undefined) sn.addModifier(new Accidental(ACCIDENTAL[o.a]), i); });
+      const color = n.color && colors[n.color];
+      if (color) {
+        const style = { fillStyle: color, strokeStyle: color };
+        sn.setStyle(style);
+        sn.setLedgerLineStyle(style);
+      }
+      return sn;
+    });
     const voice = new Voice({ numBeats: 4, beatValue: 4 });
-    voice.addTickables([note]);
-    new Formatter().joinVoices([voice]).format([voice], 80);
+    voice.addTickables(vfNotes);
+    const room = vfNotes.length === 1 ? 80 : Math.max(80, w - stave.getNoteStartX() - 24);
+    new Formatter().joinVoices([voice]).format([voice], room);
     voice.draw(ctx, stave);
-  }
+  });
   const svg = container.querySelector('svg');
   svg.setAttribute('viewBox', `0 0 ${w} ${ht}`);
   svg.removeAttribute('width');
@@ -187,6 +238,11 @@ export function keyboard({ from = 48, to = 84, onKey = null, sound = true, keyWi
     el: wrap,
     mark(midis, kind = 'on') { midis.forEach((m) => keys.get(m)?.classList.add('mark-' + kind)); },
     unmark(midis, kind = 'on') { midis.forEach((m) => keys.get(m)?.classList.remove('mark-' + kind)); },
+    /** Mark keys for a moment, then clear them. */
+    flash(midis, kind = 'good', ms = 350) {
+      api.mark(midis, kind);
+      setTimeout(() => api.unmark(midis, kind), ms);
+    },
     /** Scroll sideways only if the key is outside the visible part of the keyboard. */
     reveal(midi) {
       const el = keys.get(midi);

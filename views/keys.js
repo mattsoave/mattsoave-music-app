@@ -1,13 +1,14 @@
 // Key signatures and the chords in a key: quizzes plus a reference you can tap to hear.
 
 import {
-  keysUpTo, MAJOR_BY_FIFTHS, MINOR_BY_FIFTHS, accidentalsLabel, diatonicChords, scaleNotes, parseKey, pretty, pcName,
+  keysUpTo, MAJOR_BY_FIFTHS, MINOR_BY_FIFTHS, accidentalsLabel, diatonicChords, scaleNotes, parseKey, pretty, pcName, samePitchClasses,
 } from '../theory.js';
 import { ALL_KEY_IDS } from '../chart.js';
 import { pick, record } from '../srs.js';
 import { playChord, playSequence } from '../audio.js';
+import { onNote, chordTracker } from '../midi.js';
 import * as store from '../store.js';
-import { h, clear, card, hint, button, segmented, chips, choices, drawStaff, keyboard } from '../ui.js';
+import { h, clear, card, hint, button, segmented, chips, choices, drawStaff, keyboard, midiHint, releaseFocus } from '../ui.js';
 
 const DEFAULTS = { part: 'sig', range: '3', minor: false, dir: 'staff', chordDir: 'name', sevenths: false, refKey: 'C' };
 
@@ -33,7 +34,13 @@ export function mount(root) {
     let startedAt = 0;
     let answered = false;
     let timer = null;
-    stopRef.fn = () => clearTimeout(timer);
+    // On a MIDI keyboard, play the key's tonic (any octave) to name the key.
+    const offNote = onNote((ev) => {
+      if (ev.type !== 'on' || answered || !q || s.dir !== 'staff') return;
+      const match = keysUpTo(maxAcc, q.minor).find((k) => parseKey(k.id).pc === ((ev.midi % 12) + 12) % 12);
+      pickAnswer(match ? match.id : 'none');
+    });
+    stopRef.fn = () => { clearTimeout(timer); offNote(); };
 
     const staffBox = h('div', { class: 'staff-box' });
     const prompt = h('p', { class: 'md-typescale-title-medium prompt' });
@@ -65,6 +72,7 @@ export function mount(root) {
 
     function next() {
       clearTimeout(timer);
+      releaseFocus(answerHost);
       const prev = q && q.id;
       q = pick(pool(), (i) => stats[i.id], prev);
       answered = false;
@@ -100,7 +108,8 @@ export function mount(root) {
     }
 
     box.append(
-      card('Name that key', staffBox, prompt, feedback, answerHost, h('div', { class: 'actions' }, nextBtn)),
+      card('Name that key', staffBox, prompt, feedback, answerHost, h('div', { class: 'actions' }, nextBtn),
+        midiHint('When you see a staff, you can also answer by playing the key\'s home note on your keyboard.')),
       card('Settings',
         h('p', { class: 'label md-typescale-label-large' }, 'Question'),
         segmented([{ value: 'staff', label: 'See staff, name key' }, { value: 'count', label: 'See key, count marks' }], s.dir, (v) => { s.dir = v; save(); next(); }),
@@ -135,8 +144,24 @@ export function mount(root) {
     const table = h('div', { class: 'chord-table' });
     let seq = null;
 
-    stopRef.fn = () => { clearTimeout(timer); if (seq) seq.stop(); };
+    stopRef.fn = () => { clearTimeout(timer); if (seq) seq.stop(); offChord(); };
     let timer = null;
+
+    // On a MIDI keyboard, "Number to chord" questions can be answered by playing the chord, in any octave or voicing.
+    const tracker = chordTracker();
+    let heldNow = [];
+    let skipRelease = false;
+    const offChord = onNote((ev) => {
+      const r = tracker.feed(ev);
+      heldNow = r.held;
+      if (!q || answered || s.chordDir !== 'name') return;
+      if (r.held.length >= q.c.pcs.length && samePitchClasses(r.held, q.c.pcs)) { pickAnswer(q.c.name); return; }
+      if (!r.released) return;
+      if (skipRelease) { skipRelease = false; return; }
+      if (r.peak.length < 2) return;
+      const hit = q.chords.find((c) => samePitchClasses(c.pcs, r.peak));
+      pickAnswer(hit ? hit.name : 'none');
+    });
 
     const refSelect = h('md-outlined-select', { label: 'Key' });
     for (const id of ALL_KEY_IDS) {
@@ -218,6 +243,8 @@ export function mount(root) {
       const c = chords[item.degree];
       q = { ...item, keyId, chords, c };
       answered = false;
+      skipRelease = heldNow.length > 0;
+      releaseFocus(answerHost);
       startedAt = performance.now();
       const k = parseKey(keyId);
       const keyLabel = pretty(k.tonic) + (k.minor ? ' minor' : ' major');
@@ -250,7 +277,8 @@ export function mount(root) {
     }
 
     box.append(
-      card('Quiz: chords in a key', prompt, feedback, answerHost, h('div', { class: 'actions' }, nextBtn)),
+      card('Quiz: chords in a key', prompt, feedback, answerHost, h('div', { class: 'actions' }, nextBtn),
+        midiHint('For "Number to chord", you can also play the chord on your keyboard, in any octave.')),
       card('Settings',
         h('p', { class: 'label md-typescale-label-large' }, 'Question'),
         segmented([{ value: 'name', label: 'Number to chord' }, { value: 'roman', label: 'Chord to number' }], s.chordDir, (v) => { s.chordDir = v; save(); next(); }),

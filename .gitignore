@@ -1,0 +1,5 @@
+*.csv
+.DS_Store
+node_modules/
+# personal song charts must never be committed
+songs-backup*.json

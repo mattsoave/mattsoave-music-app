@@ -1,14 +1,15 @@
 // App shell: bottom navigation, one screen at a time, offline support.
 
-import { h, clear } from './ui.js';
+import { h, clear, toast } from './ui.js';
 import * as store from './store.js';
 import * as notes from './views/notes.js';
 import * as keys from './views/keys.js';
 import * as ear from './views/ear.js';
 import * as metronome from './views/metronome.js';
 import * as songs from './views/songs.js';
+import { importBackupText } from './views/songs.js';
 
-const VERSION = 1;
+const VERSION = 2;
 
 const ICON = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const TABS = [
@@ -48,9 +49,29 @@ bar.addEventListener('navigation-bar-activated', (e) => {
 });
 document.getElementById('navwrap').append(bar);
 
-const start = Math.max(0, TABS.findIndex((t) => t.id === store.get('tab', 'notes')));
+// A file shared to the app (Android share sheet): import it as a song backup, then open Songs.
+async function takeSharedFile() {
+  if (!new URLSearchParams(location.search).has('shared')) return null;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const cache = await caches.open('shared-files');
+    const res = await cache.match('shared-file');
+    if (!res) return 'Something was shared, but no file arrived.';
+    const text = await res.text();
+    await cache.delete('shared-file');
+    const n = importBackupText(text);
+    return `Imported ${n} song${n === 1 ? '' : 's'} from the shared file.`;
+  } catch {
+    return 'That shared file is not a song backup.';
+  }
+}
+
+const sharedMessage = await takeSharedFile();
+const songsIndex = TABS.findIndex((t) => t.id === 'songs');
+const start = sharedMessage ? songsIndex : Math.max(0, TABS.findIndex((t) => t.id === store.get('tab', 'notes')));
 bar.activeIndex = start;
 show(start);
+if (sharedMessage) toast(sharedMessage);
 
 // ---- Status and offline ----
 document.getElementById('ver').textContent = VERSION;

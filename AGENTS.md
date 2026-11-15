@@ -15,7 +15,7 @@ An installable web app (PWA) for practicing piano: note-reading flashcards, key 
 - `audio.js`: Web Audio piano-like synth and the metronome clock.
 - `store.js`: the only place that touches `localStorage`. Everything else calls it.
 - `ui.js`: element helper `h()`, Material controls (`segmented`, `chips`, `choices`), staff drawing, on-screen keyboard.
-- `sw.js`, `manifest.webmanifest`: offline cache and install.
+- `sw.js`, `manifest.webmanifest`: offline cache, install, and the share target that lets you share a song backup (`.json`) from another app straight into Songs. `app.js` reads the shared file on load (`?shared=1`) and calls `importBackupText()` in `views/songs.js`.
 - `vendor/material.js`: prebuilt bundle of `@material/web` 2.5.0 (Apache 2.0, license beside it). Not hand-edited.
 - `vendor/vexflow.js`: prebuilt bundle of VexFlow 5.0.0 with the Bravura music font inside (MIT, license beside it; the font is under the SIL Open Font License). Not hand-edited. It draws the staff, clefs, ledger lines and key signatures.
 
@@ -35,6 +35,7 @@ An installable web app (PWA) for practicing piano: note-reading flashcards, key 
 - **Never commit song charts or lyrics.** The repo is public. Songs live only in the browser's storage, and the backup file `songs-backup-*.json` is in `.gitignore`. Test data in `test/run.js` uses made-up "la la" lyrics, keep it that way.
 - VexFlow draws an inline pixel width and height on its SVG. `drawStaff()` strips them so the staff scales to its box. Keep that.
 - Browsers only allow sound after a tap. The audio context is created on first use in `audio.js`. Don't start sound on page load.
+- Android registers share targets at install time, so a manifest change needs the app uninstalled and installed again to show up in the share sheet. The share target accepts `application/*` and `text/*` on purpose, because files shared from email or Drive can arrive with a generic MIME type.
 - The Web MIDI API works in Chrome on Android but not in iOS Safari.
 
 ## Git and publishing

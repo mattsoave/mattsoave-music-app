@@ -9,6 +9,17 @@ import { h, clear, card, hint, button, segmented, chips, toast } from '../ui.js'
 const keyLabel = (id) => { const k = parseKey(id); return pretty(k.tonic) + (k.minor ? ' minor' : ' major'); };
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
+/** Merge a backup file's songs into storage (same id replaces). Returns how many came in. Throws if it is not a song backup. */
+export function importBackupText(text) {
+  const data = JSON.parse(text);
+  const incoming = Array.isArray(data.songs) ? data.songs.filter((x) => x && x.id && typeof x.text === 'string') : [];
+  if (!incoming.length) throw new Error('no songs in file');
+  const byId = new Map(store.get('songs', []).map((x) => [x.id, x]));
+  incoming.forEach((x) => byId.set(x.id, x));
+  store.set('songs', [...byId.values()]);
+  return incoming.length;
+}
+
 export function mount(root) {
   let songs = store.get('songs', []);
   const view = { numbers: false, chordsOnly: false, ...store.get('songs.view', {}) };
@@ -57,13 +68,9 @@ export function mount(root) {
       const f = fileInput.files[0];
       if (!f) return;
       try {
-        const data = JSON.parse(await f.text());
-        const incoming = Array.isArray(data.songs) ? data.songs : [];
-        const byId = new Map(songs.map((x) => [x.id, x]));
-        incoming.forEach((x) => { if (x && x.id && typeof x.text === 'string') byId.set(x.id, x); });
-        songs = [...byId.values()];
-        saveSongs();
-        toast(`Imported ${incoming.length} songs`);
+        const count = importBackupText(await f.text());
+        songs = store.get('songs', []);
+        toast(`Imported ${count} song${count === 1 ? '' : 's'}`);
         showList();
       } catch { toast('That file is not a song backup.'); }
     });

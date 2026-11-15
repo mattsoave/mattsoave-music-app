@@ -141,7 +141,7 @@ export function mount(root) {
         opts = pool.map((i) => ({ value: i.type, label: capitalize(CHORD_TYPES[i.type].label) }));
         prompt.textContent = 'What kind of chord is it?';
       } else if (kind === 'inkey') {
-        opts = pool.map((c) => ({ value: c.id, label: pretty(c.id) }));
+        opts = pool.map((c) => ({ value: c.numeral, label: pretty(c.numeral) }));
         prompt.textContent = s.cadence ? 'Which chord comes after the cadence?' : 'Which chord is this, in the key of the first sound you hear?';
       } else {
         const wrong = shuffle(pool.filter((p) => p.id !== item.id)).slice(0, 5);

@@ -1,4 +1,4 @@
-const CACHE = 'piano-practice-v1';
+const CACHE = 'piano-practice-v2';
 const SHELL = [
   './', 'index.html', 'app.js', 'theory.js', 'srs.js', 'store.js', 'chart.js', 'audio.js', 'ui.js',
   'views/notes.js', 'views/keys.js', 'views/ear.js', 'views/metronome.js', 'views/songs.js',
@@ -12,11 +12,27 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))));
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== 'shared-files').map((k) => caches.delete(k)))));
   self.clients.claim();
 });
 
 self.addEventListener('fetch', (e) => {
+  const url = new URL(e.request.url);
+
+  // A file shared to the app from another app (the Android share sheet)
+  if (e.request.method === 'POST' && url.pathname.endsWith('/share-target')) {
+    e.respondWith((async () => {
+      const form = await e.request.formData();
+      const file = form.get('file');
+      const cache = await caches.open('shared-files');
+      if (file) {
+        await cache.put('shared-file', new Response(file, { headers: { 'x-file-name': file.name || 'shared file' } }));
+      }
+      return Response.redirect('./?shared=1', 303);
+    })());
+    return;
+  }
+
   if (e.request.method !== 'GET') return;
   // Cache first, then network; fall back to the cached page when offline
   e.respondWith(

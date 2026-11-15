@@ -186,6 +186,15 @@ export function keyboard({ from = 48, to = 84, onKey = null, sound = true, keyWi
   const api = {
     el: wrap,
     mark(midis, kind = 'on') { midis.forEach((m) => keys.get(m)?.classList.add('mark-' + kind)); },
+    unmark(midis, kind = 'on') { midis.forEach((m) => keys.get(m)?.classList.remove('mark-' + kind)); },
+    /** Scroll sideways only if the key is outside the visible part of the keyboard. */
+    reveal(midi) {
+      const el = keys.get(midi);
+      if (!el) return;
+      const left = el.offsetLeft;
+      const right = left + el.offsetWidth;
+      if (left < wrap.scrollLeft + keyWidth || right > wrap.scrollLeft + wrap.clientWidth - keyWidth) api.scrollTo(midi);
+    },
     clearMarks() { keys.forEach((el) => el.classList.remove('mark-on', 'mark-good', 'mark-bad')); },
     scrollTo(midi) {
       const el = keys.get(midi);

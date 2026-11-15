@@ -1,7 +1,7 @@
-const CACHE = 'piano-practice-v3';
+const CACHE = 'piano-practice-v4';
 const SHELL = [
-  './', 'index.html', 'app.js', 'theory.js', 'srs.js', 'store.js', 'chart.js', 'audio.js', 'ui.js', 'feedback.js',
-  'views/notes.js', 'views/keys.js', 'views/ear.js', 'views/metronome.js', 'views/songs.js',
+  './', 'index.html', 'app.js', 'theory.js', 'srs.js', 'store.js', 'chart.js', 'audio.js', 'ui.js', 'feedback.js', 'midi.js',
+  'views/notes.js', 'views/keys.js', 'views/ear.js', 'views/metronome.js', 'views/songs.js', 'views/midi.js',
   'vendor/material.js', 'vendor/vexflow.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
 ];
 

@@ -14,6 +14,7 @@ An installable web app (PWA) for practicing piano: note-reading flashcards, key 
 - `theory.js`, `srs.js`, `chart.js`: pure logic with no DOM (note and key math, practice weighting, chord chart parsing). Checked by `test/run.js`.
 - `audio.js`: Web Audio piano-like synth and the metronome clock. The clock calls `onBar` on the first beat of each bar, which the metronome screen uses to start each backing chord on the same audio clock as the clicks.
 - `store.js`: the only place that touches `localStorage`. Everything else calls it.
+- `midi.js`: Web MIDI input. `parseMessage()` is pure (tested); `onNote(fn)` is the one "a note was played" subscription, so a quiz screen can listen to the keyboard later without touching MIDI code. `views/midi.js` is the MIDI screen.
 - `feedback.js`: the notes card at the bottom of every screen. Notes save on every keystroke under `music.feedback.notes`, and are not part of the song backup, so imports never overwrite them.
 - `ui.js`: element helper `h()`, Material controls (`segmented`, `chips`, `choices`), staff drawing, on-screen keyboard.
 - `sw.js`, `manifest.webmanifest`: offline cache, install, and the share target that lets you share a song backup (`.json`) from another app straight into Songs. `app.js` reads the shared file on load (`?shared=1`) and calls `importBackupText()` in `views/songs.js`.
@@ -37,7 +38,7 @@ An installable web app (PWA) for practicing piano: note-reading flashcards, key 
 - VexFlow draws an inline pixel width and height on its SVG. `drawStaff()` strips them so the staff scales to its box. Keep that.
 - Browsers only allow sound after a tap. The audio context is created on first use in `audio.js`. Don't start sound on page load.
 - Android registers share targets at install time, so a manifest change needs the app uninstalled and installed again to show up in the share sheet. The share target accepts `application/*` and `text/*` on purpose, because files shared from email or Drive can arrive with a generic MIME type.
-- The Web MIDI API works in Chrome on Android but not in iOS Safari.
+- The Web MIDI API works in Chrome on Android (a class-compliant USB keyboard needs a USB-C cable or adapter, and the browser asks permission the first time) but not in iOS Safari.
 
 ## Git and publishing
 

@@ -67,6 +67,17 @@ ok('voice leading stays near and puts the bass low', () => {
   assert.ok(Math.abs(mean(a.upper) - mean(b.upper)) < 6);
 });
 
+// ---- midi ----
+import * as M from '../midi.js';
+ok('midi messages', () => {
+  assert.deepEqual(M.parseMessage([0x90, 60, 100]), { type: 'on', midi: 60, velocity: 100 / 127 });
+  assert.deepEqual(M.parseMessage([0x93, 72, 1]).type, 'on'); // any channel
+  assert.deepEqual(M.parseMessage([0x90, 60, 0]), { type: 'off', midi: 60, velocity: 0 });
+  assert.equal(M.parseMessage([0x80, 60, 64]).type, 'off');
+  assert.equal(M.parseMessage([0xb0, 64, 127]), null); // pedal, ignored for now
+  assert.equal(M.parseMessage([0xf8]), null); // clock tick
+});
+
 // ---- chart parsing ----
 const SAMPLE = `https://tabs.ultimate-guitar.com/tab/some-artist/some-song-chords-123
 [Intro]

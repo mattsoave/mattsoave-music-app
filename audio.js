@@ -26,7 +26,7 @@ export function audio() {
 export const now = () => audio().currentTime;
 
 /** Play one note. `when` is in audio-clock seconds. Returns a function that stops it early. */
-export function playNote(midi, { when = null, dur = 1.2, vel = 0.5 } = {}) {
+export function playNote(midi, { when = null, dur = 1.2, vel = 0.5, release = 0.08 } = {}) {
   const c = audio();
   const t = when === null ? c.currentTime + 0.01 : when;
   const osc = c.createOscillator();
@@ -47,8 +47,8 @@ export function playNote(midi, { when = null, dur = 1.2, vel = 0.5 } = {}) {
     try {
       g.gain.cancelScheduledValues(c.currentTime);
       g.gain.setValueAtTime(Math.max(g.gain.value, 0.0001), c.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.08);
-      osc.stop(c.currentTime + 0.1);
+      g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + release);
+      osc.stop(c.currentTime + release + 0.02);
     } catch { /* already stopped */ }
   };
 }

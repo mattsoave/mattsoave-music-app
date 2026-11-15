@@ -157,6 +157,15 @@
   .slider input { flex: 1; accent-color: var(--md-sys-color-primary); height: 32px; }
   .big-start { min-width: 8em; --md-filled-button-container-height: 56px; }
 
+  .chord-stage { text-align: center; margin: 10px 0 14px; }
+  .chord-now { color: var(--md-sys-color-primary); min-height: 1.2em; }
+  .chord-next { color: var(--md-sys-color-on-surface-variant); margin: 2px 0 10px; }
+  .chord-pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .cpill { min-width: 62px; padding: 8px 10px; border-radius: 14px; background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface); transition: background-color .08s; }
+  .cpill div + div { color: var(--md-sys-color-on-surface-variant); }
+  .cpill.on { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+  .cpill.on div + div { color: var(--md-sys-color-on-primary); }
+
   /* Songs */
   .chart { overflow-x: auto; font-family: ui-monospace, 'Roboto Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.45; }
   .cl { white-space: pre; }
@@ -181,8 +190,8 @@
     <span class="meta md-typescale-body-small">v<span id="ver"></span> &middot; <span id="net">checking...</span></span>
   </div>
   <div id="view"></div>
+  <div id="feedback"></div>
 </main>
 <div class="navwrap" id="navwrap"></div>
 </body>
 </html>
-  <div id="feedback"></div>

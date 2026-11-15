@@ -10,7 +10,7 @@ import * as songs from './views/songs.js';
 import { mountFeedback } from './feedback.js';
 import { importBackupText } from './views/songs.js';
 
-const VERSION = 2;
+const VERSION = 3;
 
 const ICON = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const TABS = [

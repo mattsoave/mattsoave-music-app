@@ -187,6 +187,16 @@ export function numeralPcs(numeral, tonicPc) {
   return CHORD_TYPES[c.type].iv.map((s) => (tonicPc + c.root + s) % 12);
 }
 
+export const MAJOR_TONICS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const FLAT_KEYS = new Set(['F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb']);
+
+/** The chord symbol for a numeral in a major key, such as ('vi', 'D') -> 'Bm' and ('V7', 'F') -> 'C7'. */
+export function numeralChordName(numeral, tonic) {
+  const c = numeralChord(numeral);
+  const pc = (notePc(tonic) + c.root) % 12;
+  return pcName(pc, FLAT_KEYS.has(tonic)) + CHORD_TYPES[c.type].sym;
+}
+
 /**
  * Voice a chord as a bass note plus close-position upper notes, picking the inversion
  * closest to the previous chord. Returns ascending MIDI numbers.

@@ -88,6 +88,8 @@ export class Metronome {
     this.accent = true;
     this.running = false;
     this.onBeat = null;
+    this.onBar = null; // (barIndex, time) when the first beat of a bar is scheduled
+    this.clickOn = true;
     this._timer = null;
   }
 
@@ -112,7 +114,8 @@ export class Metronome {
     while (this._next < c.currentTime + 0.12) {
       const beatIndex = Math.floor(this._tick / this.sub) % this.beats;
       const subIndex = this._tick % this.sub;
-      this._click(this._next, subIndex === 0 ? (beatIndex === 0 && this.accent ? 'accent' : 'beat') : 'sub');
+      if (this.clickOn) this._click(this._next, subIndex === 0 ? (beatIndex === 0 && this.accent ? 'accent' : 'beat') : 'sub');
+      if (subIndex === 0 && beatIndex === 0 && this.onBar) this.onBar(Math.floor(this._tick / (this.sub * this.beats)), this._next);
       if (subIndex === 0 && this.onBeat) this.onBeat(beatIndex, this._next);
       this._next += 60 / this.bpm / this.sub;
       this._tick++;

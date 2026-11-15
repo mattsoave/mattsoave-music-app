@@ -50,6 +50,14 @@ ok('numeral chords', () => {
   assert.deepEqual(T.numeralPcs('V7', 0), [7, 11, 2, 5]);
   assert.deepEqual(T.numeralPcs('II7', 7), [9, 1, 4, 7]); // A7 in G
 });
+ok('chord names for a numeral in a key', () => {
+  assert.equal(T.numeralChordName('vi', 'D'), 'Bm');
+  assert.equal(T.numeralChordName('V7', 'F'), 'C7');
+  assert.equal(T.numeralChordName('IV', 'Bb'), 'Eb');
+  assert.equal(T.numeralChordName('\u266DVII', 'D'), 'C');
+  assert.equal(T.numeralChordName('ii', 'F#'), 'G#m');
+  assert.equal(T.numeralChordName('II7', 'G'), 'A7');
+});
 ok('voice leading stays near and puts the bass low', () => {
   const a = T.voiceChord([0, 4, 7]);
   const b = T.voiceChord([5, 9, 0], a.upper);

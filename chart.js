@@ -1,7 +1,7 @@
 // Parsing chord charts pasted from sites like Ultimate Guitar. Pure functions, no DOM.
 // A chart is plain text: an optional URL first, [Section] headers, chord lines above lyric lines.
 
-import { LETTER_PC, parseKey, scaleNotes, notePc } from './theory.js';
+import { LETTER_PC, parseKey, scaleNotes, notePc, MAJOR_TONICS } from './theory.js';
 
 const CHORD_RE = /^[A-G](?:#|b)?(?:maj|min|dim|aug|sus|add|m|M|\+|\u00B0|\u00F8|-|[0-9]|#|b|\(|\)|,|\/[A-G](?:#|b)?)*$/;
 const FILLER_RE = /^(?:\||\|\||x\d+|\(x\d+\)|N\.?C\.?|%|-|\/|\.\.\.)$/i;
@@ -132,7 +132,6 @@ function diatonicSet(keyId) {
   return notes.map((pc, i) => ({ pc, q: q[i] }));
 }
 
-export const MAJOR_TONICS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 export const MINOR_TONICS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
 export const ALL_KEY_IDS = [...MAJOR_TONICS, ...MINOR_TONICS.map((t) => t + 'm')];
 

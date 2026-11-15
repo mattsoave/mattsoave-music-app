@@ -12,7 +12,7 @@ An installable web app (PWA) for practicing piano: note-reading flashcards, key 
 - `app.js`: bottom navigation and screen switching. Bump `VERSION` here on release.
 - `views/*.js`: one file per screen (`notes`, `keys`, `ear`, `metronome`, `songs`). Each exports `mount(root)` and returns a teardown function.
 - `theory.js`, `srs.js`, `chart.js`: pure logic with no DOM (note and key math, practice weighting, chord chart parsing). Checked by `test/run.js`.
-- `audio.js`: Web Audio piano-like synth and the metronome clock.
+- `audio.js`: Web Audio piano-like synth and the metronome clock. The clock calls `onBar` on the first beat of each bar, which the metronome screen uses to start each backing chord on the same audio clock as the clicks.
 - `store.js`: the only place that touches `localStorage`. Everything else calls it.
 - `feedback.js`: the notes card at the bottom of every screen. Notes save on every keystroke under `music.feedback.notes`, and are not part of the song backup, so imports never overwrite them.
 - `ui.js`: element helper `h()`, Material controls (`segmented`, `chips`, `choices`), staff drawing, on-screen keyboard.

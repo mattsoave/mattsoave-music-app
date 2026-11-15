@@ -1,18 +1,21 @@
 // Metronome with tap tempo, beats per bar and subdivisions.
 
-import { Metronome, audio } from '../audio.js';
+import { Metronome, audio, playNote } from '../audio.js';
+import { PROGRESSIONS, MAJOR_TONICS, numeralPcs, numeralChordName, voiceChord, notePc, pretty } from '../theory.js';
 import * as store from '../store.js';
-import { h, card, button, segmented, chips } from '../ui.js';
+import { h, clear, card, hint, button, segmented, chips } from '../ui.js';
 
 const TEMPO_NAMES = [[40, 'Grave'], [60, 'Largo'], [66, 'Larghetto'], [76, 'Adagio'], [108, 'Andante'], [120, 'Moderato'], [156, 'Allegro'], [176, 'Vivace'], [200, 'Presto'], [999, 'Prestissimo']];
 const tempoName = (bpm) => TEMPO_NAMES.find(([max]) => bpm < max)[1];
-const DEFAULTS = { bpm: 100, beats: 4, sub: 1, accent: true };
+const DEFAULTS = { bpm: 100, beats: 4, sub: 1, accent: true, backing: { on: false, click: true, key: 'C', prog: 'I-V-vi-IV', bars: 1 } };
 
 export function mount(root) {
-  const s = { ...DEFAULTS, ...store.get('metronome', {}) };
+  const saved = store.get('metronome', {});
+  const s = { ...DEFAULTS, ...saved, backing: { ...DEFAULTS.backing, ...(saved.backing || {}) } };
+  const bk = s.backing;
   const save = () => store.set('metronome', s);
   const m = new Metronome();
-  Object.assign(m, s);
+  Object.assign(m, { bpm: s.bpm, beats: s.beats, sub: s.sub, accent: s.accent, clickOn: bk.click });
   let wake = null;
   const timers = new Set();
 
@@ -49,6 +52,9 @@ export function mount(root) {
       m.stop();
       startBtn.textContent = 'Start';
       [...dots.children].forEach((d) => d.classList.remove('on'));
+      timers.forEach(clearTimeout);
+      timers.clear();
+      showChord(-1);
       releaseWake();
     } else {
       m.start();
@@ -70,6 +76,55 @@ export function mount(root) {
 
   slider.addEventListener('input', () => setBpm(Number(slider.value)));
 
+  // ---- Backing chords: a progression that loops with the metronome, one chord every bar or two ----
+  let voicings = [];
+  const nowEl = h('div', { class: 'chord-now md-typescale-display-small' });
+  const nextEl = h('div', { class: 'chord-next md-typescale-body-medium' });
+  const pills = h('div', { class: 'chord-pills' });
+
+  function buildBacking() {
+    const prog = PROGRESSIONS.find((p) => p.id === bk.prog) || PROGRESSIONS[0];
+    const tonicPc = notePc(bk.key);
+    let prev = null;
+    voicings = prog.numerals.map((n) => {
+      const v = voiceChord(numeralPcs(n, tonicPc), prev);
+      prev = v.upper;
+      return { numeral: n, name: numeralChordName(n, bk.key), bass: v.bass, upper: v.upper };
+    });
+    clear(pills);
+    voicings.forEach((v) => pills.append(h('div', { class: 'cpill' }, h('div', { class: 'md-typescale-title-medium' }, pretty(v.name)), h('div', { class: 'md-typescale-body-small' }, pretty(v.numeral)))));
+    showChord(-1);
+  }
+
+  function showChord(idx) {
+    [...pills.children].forEach((el, i) => el.classList.toggle('on', i === idx));
+    if (idx < 0 || !voicings.length) {
+      nowEl.textContent = voicings.length ? pretty(voicings[0].name) : '';
+      nextEl.textContent = bk.on ? 'Press Start to hear the loop.' : 'Turn on "Play chords" to loop this progression.';
+      return;
+    }
+    nowEl.textContent = pretty(voicings[idx].name);
+    nextEl.textContent = 'Next: ' + pretty(voicings[(idx + 1) % voicings.length].name);
+  }
+
+  m.onBar = (bar, time) => {
+    if (!bk.on || !voicings.length || bar % bk.bars !== 0) return;
+    const idx = Math.floor(bar / bk.bars) % voicings.length;
+    const v = voicings[idx];
+    const dur = (bk.bars * s.beats * 60 / s.bpm) * 1.1; // a little long, because high notes die away sooner
+    playNote(v.bass, { when: time, dur, vel: 0.42 });
+    v.upper.forEach((n) => playNote(n, { when: time, dur, vel: 0.26 }));
+    const t = setTimeout(() => { timers.delete(t); showChord(idx); }, Math.max(0, (time - audio().currentTime) * 1000));
+    timers.add(t);
+  };
+
+  const keySelect = h('md-outlined-select', { label: 'Key' });
+  MAJOR_TONICS.forEach((k) => keySelect.append(h('md-select-option', { value: k, selected: k === bk.key }, h('div', { slot: 'headline' }, pretty(k) + ' major'))));
+  keySelect.addEventListener('change', () => { bk.key = keySelect.value; save(); buildBacking(); });
+  const progSelect = h('md-outlined-select', { label: 'Progression' });
+  PROGRESSIONS.forEach((p) => progSelect.append(h('md-select-option', { value: p.id, selected: p.id === bk.prog }, h('div', { slot: 'headline' }, pretty(p.label)))));
+  progSelect.addEventListener('change', () => { bk.prog = progSelect.value; save(); buildBacking(); });
+
   root.append(
     card('',
       h('div', { class: 'metro-top' }, bpmOut, h('div', { class: 'md-typescale-body-large' }, 'beats per minute'), nameOut),
@@ -83,6 +138,17 @@ export function mount(root) {
       h('div', { class: 'slider' }, slider),
       h('div', { class: 'actions' }, startBtn, button('Tap tempo', tap, 'tonal')),
     ),
+    card('Backing chords',
+      hint('Loop a chord progression with the metronome, to improvise over. Chords change on the first beat of a bar.'),
+      h('div', { class: 'chord-stage' }, nowEl, nextEl, pills),
+      chips([{ value: 'on', label: 'Play chords' }, { value: 'click', label: 'Click' }], [bk.on ? 'on' : null, bk.click ? 'click' : null].filter(Boolean), (v) => {
+        bk.on = v.includes('on'); bk.click = v.includes('click'); m.clickOn = bk.click; save(); showChord(-1);
+      }),
+      h('div', { class: 'gap' }),
+      keySelect, h('div', { class: 'gap' }), progSelect,
+      h('p', { class: 'label md-typescale-label-large' }, 'Each chord lasts'),
+      segmented([{ value: '1', label: '1 bar' }, { value: '2', label: '2 bars' }], String(bk.bars), (v) => { bk.bars = Number(v); save(); }),
+    ),
     card('Settings',
       h('p', { class: 'label md-typescale-label-large' }, 'Beats per bar'),
       segmented([2, 3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: String(n) })), String(s.beats), (v) => { s.beats = Number(v); m.beats = s.beats; save(); drawDots(); }),
@@ -95,6 +161,7 @@ export function mount(root) {
 
   setBpm(s.bpm);
   drawDots();
+  buildBacking();
 
   return () => {
     m.stop();

@@ -7,6 +7,7 @@ import * as keys from './views/keys.js';
 import * as ear from './views/ear.js';
 import * as metronome from './views/metronome.js';
 import * as songs from './views/songs.js';
+import { mountFeedback } from './feedback.js';
 import { importBackupText } from './views/songs.js';
 
 const VERSION = 2;
@@ -72,6 +73,8 @@ const start = sharedMessage ? songsIndex : Math.max(0, TABS.findIndex((t) => t.i
 bar.activeIndex = start;
 show(start);
 if (sharedMessage) toast(sharedMessage);
+
+mountFeedback(document.getElementById('feedback'), VERSION);
 
 // ---- Status and offline ----
 document.getElementById('ver').textContent = VERSION;

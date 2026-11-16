@@ -1,4 +1,4 @@
-const CACHE = 'piano-practice-v6';
+const CACHE = 'piano-practice-v7';
 const SHELL = [
   './', 'index.html', 'app.js', 'theory.js', 'srs.js', 'store.js', 'chart.js', 'audio.js', 'ui.js', 'feedback.js', 'midi.js',
   'sound.js', 'reading.js',

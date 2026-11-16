@@ -30,6 +30,7 @@ An installable web app (PWA) for practicing piano: reading notes, intervals, cho
 - Use segmented buttons for two to five short choices and filter chips for toggles.
 - All saved data goes through `store.js`.
 - Every quiz must work both with tap answers (away from the keyboard) and with a MIDI keyboard where it makes sense. Reading quizzes want the exact written notes, octave included. Chord answers on MIDI use `chordTracker()`: accept as soon as the held notes match, judge a wrong chord only when all keys are let go, and skip the first let-go after moving on while keys are still down. After a wrong answer, playing the right notes moves on. `midiHint()` shows a line that appears only while a keyboard is connected.
+- The notes, intervals and chords quizzes have "Other keys" (a random key signature from `READ_KEYS`) and "Accidentals" (sharp, flat or natural signs relative to that key). `reading.js` spells every note against the key with `keyAccidentals()` and `spellNote()`: `acc` is what the note really is, and `shown` is the sign to draw, or null when the key signature already covers it. Pass `shown` to `drawStaff()` as the note's `accs`, never `acc`. Interval pairs are limited to the usual names (minor, major, perfect, tritone), so the number and the full name always agree. Chord answers are the root (letter plus `accidentalPicker()`) and the kind of chord; the inversion is shown in the feedback but not asked for.
 
 ## Things that are easy to get wrong
 

@@ -1,14 +1,17 @@
 // Note reading flashcards for treble and bass clef, weighted toward the notes you miss.
 // Answer by tapping a letter, tapping the key, or playing the note on a MIDI keyboard.
+// Options add random key signatures and sharp, flat or natural signs on the notes.
 
-import { clefNotes, stepMidi, stepName, stepNote, LETTERS } from '../theory.js';
+import { clefNotes, stepName, LETTERS, pretty } from '../theory.js';
+import { makeNoteQuestion, pickKey } from '../reading.js';
 import { pick, record, weightFor, accuracy } from '../srs.js';
 import { playNote } from '../audio.js';
 import { onNote, devices } from '../midi.js';
 import * as store from '../store.js';
-import { h, clear, card, hint, button, segmented, chips, drawStaff, keyboard, midiHint, releaseFocus } from '../ui.js';
+import { h, clear, card, hint, button, segmented, chips, drawStaff, keyboard, midiHint, releaseFocus, accidentalPicker } from '../ui.js';
 
-const DEFAULTS = { clef: 'both', zone: 'all', mode: 'name', sound: true };
+const DEFAULTS = { clef: 'both', zone: 'all', mode: 'name', sound: true, otherKeys: false, accidentals: false };
+const accSign = (a) => (a === 1 ? '#' : a === -1 ? 'b' : '');
 const NATURAL = { 0: 'C', 2: 'D', 4: 'E', 5: 'F', 7: 'G', 9: 'A', 11: 'B' };
 
 export function mount(root) {
@@ -21,6 +24,9 @@ export function mount(root) {
   let missed = false; // answered wrong, waiting for Next or the right note
   let timer = null;
   let kb = null;
+  let note = null; // the spelled note for the question: { letter, acc, shown, midi, name, keyId }
+  const acc = accidentalPicker();
+  const needsAcc = () => settings.otherKeys || settings.accidentals;
 
   const staffBox = h('div', { class: 'staff-box' });
   const prompt = h('p', { class: 'md-typescale-title-medium prompt' });
@@ -48,7 +54,9 @@ export function mount(root) {
     answered = false;
     missed = false;
     startedAt = performance.now();
-    drawStaff(staffBox, { clef: q.clef, step: q.step });
+    note = makeNoteQuestion({ step: q.step, keyId: pickKey(settings.otherKeys), accidentals: settings.accidentals });
+    drawStaff(staffBox, { clef: q.clef, keySig: note.keyId === 'C' ? null : note.keyId, notes: [{ steps: [q.step], accs: [note.shown], duration: 'w' }] });
+    acc.reset();
     prompt.textContent = settings.mode === 'name' ? 'Which note is this?' : 'Tap this note on the keyboard';
     feedback.textContent = '';
     feedback.className = 'feedback md-typescale-body-large';
@@ -68,17 +76,22 @@ export function mount(root) {
     today.total++;
     if (correct) { today.right++; today.streak++; } else today.streak = 0;
     const where = q.zone === 'staff' ? '' : q.zone === 'above' ? ' (above the staff)' : ' (below the staff)';
+    const name = pretty(note.name);
+    // Say where the sharp or flat came from, since that is the part that is easy to miss.
+    let why = '';
+    if (note.shown === null && note.acc !== 0) why = ` The key signature makes it ${note.acc > 0 ? 'sharp' : 'flat'}.`;
+    else if (note.shown === 0) why = ' The natural sign cancels the key signature.';
     if (correct) {
-      feedback.textContent = 'Correct. ' + stepName(q.step) + where;
+      feedback.textContent = 'Correct. ' + name + where;
       feedback.classList.add('good');
     } else {
-      feedback.textContent = prefix + 'That note is ' + stepName(q.step) + where + '.' + (devices().length ? ' Play it to go on.' : '');
+      feedback.textContent = prefix + 'That note is ' + name + where + '.' + why + (devices().length ? ' Play it to go on.' : '');
       feedback.classList.add('bad');
     }
-    if (settings.sound && !playedRight) playNote(stepMidi(q.step), { dur: 1 });
-    if (kb) kb.mark([stepMidi(q.step)], 'good');
+    if (settings.sound && !playedRight) playNote(note.midi, { dur: 1 });
+    if (kb) kb.mark([note.midi], 'good');
     answerBox.querySelectorAll('.letter').forEach((b) => {
-      if (b.dataset.letter === stepNote(q.step).letter) b.dataset.state = 'good';
+      if (b.dataset.letter === note.letter) b.dataset.state = 'good';
       else if (!correct && b.dataset.letter === given) b.dataset.state = 'bad';
     });
     renderScore();
@@ -90,7 +103,7 @@ export function mount(root) {
   // A MIDI keyboard answers in either mode. The octave has to match, since that is what the staff shows.
   const offNote = onNote((ev) => {
     if (ev.type !== 'on' || !q) return;
-    const target = stepMidi(q.step);
+    const target = note.midi;
     if (answered) {
       if (missed && ev.midi === target) nextQuestion();
       return;
@@ -113,14 +126,21 @@ export function mount(root) {
     if (settings.mode === 'name') {
       const grid = h('div', { class: 'letters' });
       for (const L of LETTERS) {
-        const b = h('md-filled-tonal-button', { class: 'letter', dataset: { letter: L }, onClick: () => { if (!answered) finish(stepNote(q.step).letter === L, L); } }, L);
+        const b = h('md-filled-tonal-button', { class: 'letter', dataset: { letter: L }, onClick: () => {
+          if (answered) return;
+          const a = needsAcc() ? acc.value : 0;
+          const prefix = L === note.letter && a !== note.acc ? `Not ${pretty(L + accSign(a))}. ` : '';
+          finish(L === note.letter && a === note.acc, L, { prefix });
+        } }, L);
         grid.append(b);
       }
+      if (needsAcc()) answerBox.append(acc.el);
       answerBox.append(grid);
+      if (needsAcc()) answerBox.append(hint('Set ♭ or ♯ first if the note has one, then tap the letter.'));
     } else {
       kb = keyboard({ from: 33, to: 88, sound: false, onKey: (m) => {
         if (answered) return;
-        const target = stepMidi(q.step);
+        const target = note.midi;
         if (m === target) finish(true, null);
         else { kb.mark([m], 'bad'); finish(false, null); }
       } });
@@ -166,6 +186,11 @@ export function mount(root) {
       segmented([{ value: 'all', label: 'All' }, { value: 'ledger', label: 'Ledger lines' }, { value: 'weak', label: 'My weak spots' }], settings.zone, (v) => { settings.zone = v; save(); nextQuestion(); }),
       h('p', { class: 'label md-typescale-label-large' }, 'How to answer'),
       segmented([{ value: 'name', label: 'Name it' }, { value: 'play', label: 'Find the key' }], settings.mode, (v) => { settings.mode = v; save(); renderAnswers(); nextQuestion(); }),
+      h('div', { class: 'gap' }),
+      chips([{ value: 'otherKeys', label: 'Other keys' }, { value: 'accidentals', label: 'Accidentals' }],
+        ['otherKeys', 'accidentals'].filter((k) => settings[k]),
+        (vals) => { settings.otherKeys = vals.includes('otherKeys'); settings.accidentals = vals.includes('accidentals'); save(); renderAnswers(); nextQuestion(); }),
+      hint('Other keys adds a random key signature (up to 5 sharps or flats). Accidentals sometimes adds a sharp, flat or natural sign to the note.'),
       h('div', { class: 'gap' }),
       chips([{ value: 'sound', label: 'Play the note after I answer' }], settings.sound ? ['sound'] : [], (vals) => { settings.sound = vals.includes('sound'); save(); }),
     ),

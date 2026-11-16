@@ -1,14 +1,15 @@
 // Reading intervals on the staff: two notes, side by side or stacked. Name the interval, or play both notes.
+// Options add random key signatures and sharp, flat or natural signs on the notes.
 
-import { INTERVALS, stepMidi, stepName } from '../theory.js';
-import { intervalPairs, intervalNumberName } from '../reading.js';
+import { INTERVALS, pretty } from '../theory.js';
+import { intervalPairs, intervalNumberName, pickKey, ALTER_CHANCE } from '../reading.js';
 import { pick, record } from '../srs.js';
 import { playSequence } from '../audio.js';
 import { onNote, devices } from '../midi.js';
 import * as store from '../store.js';
-import { h, clear, card, hint, button, segmented, choices, drawStaff, midiHint, releaseFocus } from '../ui.js';
+import { h, clear, card, hint, button, segmented, chips, choices, drawStaff, midiHint, releaseFocus } from '../ui.js';
 
-const DEFAULTS = { clef: 'treble', show: 'mix', answer: 'number' };
+const DEFAULTS = { clef: 'treble', show: 'mix', answer: 'number', otherKeys: false, accidentals: false };
 
 export function mount(root) {
   const s = { ...DEFAULTS, ...store.get('read.intervals', {}) };
@@ -29,22 +30,24 @@ export function mount(root) {
   const nextBtn = button('Next', () => next(), 'filled', { hidden: true });
 
   const keyOf = (p) => (s.answer === 'number' ? 'n' + p.number : p.short);
-  const targets = () => [stepMidi(q.pair.lo), stepMidi(q.pair.hi)];
+  const targets = () => [q.pair.lo.midi, q.pair.hi.midi];
   const notesInOrder = () => (q.downward ? [q.pair.hi, q.pair.lo] : [q.pair.lo, q.pair.hi]);
 
   function draw() {
     const notes = q.stacked
-      ? [{ steps: [q.pair.lo, q.pair.hi], duration: 'w' }]
-      : notesInOrder().map((st) => ({ steps: [st], duration: 'h' }));
-    drawStaff(staffBox, { clef: q.clef, notes });
+      ? [{ steps: [q.pair.lo.step, q.pair.hi.step], accs: [q.pair.lo.shown, q.pair.hi.shown], duration: 'w' }]
+      : notesInOrder().map((n) => ({ steps: [n.step], accs: [n.shown], duration: 'h' }));
+    drawStaff(staffBox, { clef: q.clef, keySig: q.keyId === 'C' ? null : q.keyId, notes });
   }
 
   function next() {
     clearTimeout(timer);
     releaseFocus(answerHost);
     const clef = s.clef === 'both' ? (Math.random() < 0.5 ? 'treble' : 'bass') : s.clef;
+    const keyId = pickKey(s.otherKeys);
+    const altered = s.accidentals && Math.random() < ALTER_CHANCE;
     const groups = new Map();
-    for (const p of intervalPairs(clef)) {
+    for (const p of intervalPairs(clef, { keyId, altered })) {
       if (!groups.has(keyOf(p))) groups.set(keyOf(p), []);
       groups.get(keyOf(p)).push(p);
     }
@@ -52,7 +55,7 @@ export function mount(root) {
     const item = pick(items, (i) => stats[i.id], q && q.item.id);
     const options = groups.get(item.key);
     const stacked = s.show === 'stacked' || (s.show === 'mix' && Math.random() < 0.5);
-    q = { item, clef, stacked, downward: !stacked && Math.random() < 0.5, pair: options[Math.floor(Math.random() * options.length)] };
+    q = { item, clef, keyId, stacked, downward: !stacked && Math.random() < 0.5, pair: options[Math.floor(Math.random() * options.length)] };
     answered = false;
     missed = false;
     got = new Set();
@@ -79,11 +82,11 @@ export function mount(root) {
     ans.show(keyOf(q.pair), picked);
     const number = intervalNumberName(q.pair.number);
     const name = s.answer === 'number' ? `${number} (${q.pair.name.toLowerCase()})` : `${q.pair.name} (a ${number})`;
-    const notes = notesInOrder().map(stepName).join(' to ');
+    const notes = notesInOrder().map((n) => pretty(n.name)).join(' to ');
     feedback.textContent = (ok ? 'Correct. ' : prefix + 'Not quite. ') + `${name}, ${notes}.` + (!ok && devices().length ? ' Play both notes to go on.' : '');
     feedback.classList.add(ok ? 'good' : 'bad');
     if (!played) {
-      const [a, b] = notesInOrder().map(stepMidi);
+      const [a, b] = notesInOrder().map((n) => n.midi);
       playSequence(q.stacked ? [{ notes: [a, b], beats: 2 }] : [{ notes: [a], beats: 1 }, { notes: [b], beats: 1.5 }], { beatSec: 0.55, vel: 0.45 });
     }
     if (ok) timer = setTimeout(next, 1300); else nextBtn.hidden = false;
@@ -118,6 +121,11 @@ export function mount(root) {
       segmented([{ value: 'side', label: 'Side by side' }, { value: 'stacked', label: 'Stacked' }, { value: 'mix', label: 'Both' }], s.show, (v) => { s.show = v; save(); next(); }),
       h('p', { class: 'label md-typescale-label-large' }, 'Answer with'),
       segmented([{ value: 'number', label: 'Number (3rd)' }, { value: 'full', label: 'Full name (major 3rd)' }], s.answer, (v) => { s.answer = v; save(); next(); }),
+      h('div', { class: 'gap' }),
+      chips([{ value: 'otherKeys', label: 'Other keys' }, { value: 'accidentals', label: 'Accidentals' }],
+        ['otherKeys', 'accidentals'].filter((k) => s[k]),
+        (v) => { s.otherKeys = v.includes('otherKeys'); s.accidentals = v.includes('accidentals'); save(); next(); }),
+      hint('Other keys adds a random key signature (up to 5 sharps or flats). Accidentals sometimes adds a sharp, flat or natural sign. Signs don\'t change the number, only the full name.'),
       hint('To find the number, count the lines and spaces from the lower note to the upper one, counting both notes.'),
     ),
   );

@@ -93,8 +93,17 @@ export function choices(options, onPick, { cols = 0 } = {}) {
         else if (b.dataset.value === String(picked)) b.dataset.state = 'bad';
       });
     },
+    /** Highlight one button as chosen (for answers made of more than one tap). */
+    select(value) { buttons.forEach((b) => { if (b.dataset.value === String(value)) b.dataset.state = 'picked'; else b.removeAttribute('data-state'); }); },
     reset() { buttons.forEach((b) => b.removeAttribute('data-state')); },
   };
+}
+
+/** Flat, natural or sharp, for answers that name a note. `.value` is -1, 0 or 1; `.reset()` goes back to natural. */
+export function accidentalPicker() {
+  const set = segmented([{ value: '-1', label: '\u266D' }, { value: '0', label: '\u266E' }, { value: '1', label: '\u266F' }], '0');
+  set.classList.add('acc-picker');
+  return { el: set, get value() { return Number(set.value); }, reset() { set.value = '0'; } };
 }
 
 export function toast(msg) {

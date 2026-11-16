@@ -115,37 +115,74 @@ ok('chord spelling', () => {
   assert.equal(R.chordSymbol(['D', 'F#', 'A'], 'maj', 1), 'D/F#');
   assert.equal(R.chordLabel('D', 'maj', 1), 'D major, 1st inversion');
 });
-ok('chords are placed in range with the right bass note', () => {
+ok('chords are placed in range, in the key, with the right bass note', () => {
   const pc = R.placeChord(['C', 'E', 'G'], 1, 30); // first inversion from E4
   assert.deepEqual(pc.map((n) => n.midi), [64, 67, 72]);
   const rand = lcg(7);
   for (const clef of ['treble', 'bass']) {
     const { lo, hi } = R.readRange(clef);
-    for (const type of ['maj', 'min', 'dim', 'dom7', 'maj7', 'min7', 'hdim7']) {
-      for (let inv = 0; inv < T.CHORD_TYPES[type].iv.length; inv++) {
-        for (let k = 0; k < 10; k++) {
-          const q = R.makeChord({ clef, type, inversion: inv, rand });
-          assert.ok(q, `${clef} ${type} ${inv}`);
-          assert.ok(q.notes.every((n) => n.step >= lo && n.step <= hi), `${clef} ${type} out of range`);
-          const id = T.identifyChord(q.notes.map((n) => n.midi));
-          assert.equal(id.type, type);
-          assert.equal(id.inversion, q.inversion);
-          const choices = R.chordChoices(q, { rand });
-          assert.equal(choices.length, 4);
-          assert.equal(new Set(choices.map((c) => c.value)).size, 4);
-          assert.ok(choices.some((c) => c.value === `${q.root}|${q.type}|${q.inversion}`));
+    for (const keyId of ['C', 'D', 'Bb', 'B', 'Db']) {
+      const keyAcc = R.keyAccidentals(keyId);
+      for (const type of ['maj', 'min', 'dim', 'dom7', 'maj7', 'min7', 'hdim7']) {
+        for (let inv = 0; inv < T.CHORD_TYPES[type].iv.length; inv++) {
+          for (const accidentals of [false, true]) {
+            for (let k = 0; k < 4; k++) {
+              const q = R.makeChord({ clef, type, inversion: inv, keyId, accidentals, rand });
+              assert.ok(q, `${clef} ${keyId} ${type} ${inv}`);
+              assert.ok(q.notes.every((n) => n.step >= lo && n.step <= hi), `${clef} ${type} out of range`);
+              const id = T.identifyChord(q.notes.map((n) => n.midi));
+              assert.equal(id.type, type);
+              assert.equal(id.inversion, q.inversion);
+              assert.equal(id.rootPc, T.notePc(q.root));
+              for (const n of q.notes) assert.equal(n.shown, n.acc === keyAcc[n.name[0]] ? null : n.acc);
+              if (!accidentals) assert.ok(q.notes.every((n) => n.shown === null), `${keyId} ${q.root} ${type} has a sign`);
+            }
+          }
         }
       }
     }
   }
 });
+ok('keys and accidentals for reading', () => {
+  assert.deepEqual(R.keyAccidentals('D'), { C: 1, D: 0, E: 0, F: 1, G: 0, A: 0, B: 0 });
+  assert.deepEqual(R.keyAccidentals('Eb'), { C: 0, D: 0, E: -1, F: 0, G: 0, A: -1, B: -1 });
+  assert.equal(R.READ_KEYS.length, 11);
+  assert.equal(R.pickKey(false), 'C');
+  assert.deepEqual(R.alterations('F', R.keyAccidentals('D')), [0]); // F natural; F flat is too rare
+  assert.deepEqual(R.alterations('E', R.keyAccidentals('C')), [-1]); // E flat; E sharp is too rare
+  assert.deepEqual(R.alterations('G', R.keyAccidentals('C')), [-1, 1]);
+  const fs = R.spellNote(31, R.keyAccidentals('D')); // F4 in D major
+  assert.deepEqual([fs.name, fs.midi, fs.shown], ['F#4', 66, null]);
+  const fn = R.spellNote(31, R.keyAccidentals('D'), 0);
+  assert.deepEqual([fn.name, fn.midi, fn.shown], ['F4', 65, 0]); // drawn with a natural sign
+  const rand = lcg(11);
+  let signs = 0;
+  for (let k = 0; k < 400; k++) {
+    const keyId = R.pickKey(true, rand);
+    const q = R.makeNoteQuestion({ step: 28 + (k % 14), keyId, accidentals: true, rand });
+    if (q.shown !== null) { signs++; assert.notEqual(q.acc, R.keyAccidentals(keyId)[q.letter]); }
+    assert.equal(R.makeNoteQuestion({ step: 30, keyId, accidentals: false, rand }).shown, null);
+  }
+  assert.ok(signs > 80 && signs < 240, `signs ${signs}`);
+});
 ok('interval pairs', () => {
   const pairs = R.intervalPairs('treble');
   assert.ok(pairs.every((p) => p.short && p.semi >= 1 && p.semi <= 12));
-  const e4f4 = pairs.find((p) => p.lo === 30 && p.number === 1);
+  const e4f4 = pairs.find((p) => p.lo.step === 30 && p.number === 1);
   assert.equal(e4f4.short, 'm2');
   assert.equal(new Set(pairs.map((p) => p.short)).size, 12);
   assert.equal(R.intervalNumberName(2), '3rd');
+  for (const keyId of ['C', 'D', 'Ab', 'B']) {
+    const inKey = R.intervalPairs('bass', { keyId });
+    assert.ok(inKey.every((p) => p.lo.shown === null && p.hi.shown === null));
+    const d = R.intervalPairs('treble', { keyId: 'D' }).find((p) => p.lo.step === 29 && p.number === 2); // D4 to F#4
+    assert.deepEqual([d.hi.name, d.short], ['F#4', 'M3']);
+    const alt = R.intervalPairs('treble', { keyId, altered: true });
+    assert.ok(alt.length > 50);
+    assert.ok(alt.every((p) => p.lo.shown !== null || p.hi.shown !== null));
+    // the number and the name always agree, so there are no augmented or diminished intervals besides the tritone
+    assert.ok(alt.every((p) => p.semi === T.INTERVALS.find((i) => i.short === p.short).semi));
+  }
 });
 ok('melodies stay in range, follow the key and end on the tonic', () => {
   const rand = lcg(42);

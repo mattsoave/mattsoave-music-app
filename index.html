@@ -132,6 +132,17 @@
     --md-filled-tonal-button-pressed-label-text-color: var(--md-sys-color-on-error-container);
   }
   .trouble { display: flex; flex-wrap: wrap; gap: 6px; }
+  .choice[data-state="picked"] {
+    --md-filled-tonal-button-container-color: var(--md-sys-color-primary);
+    --md-filled-tonal-button-label-text-color: var(--md-sys-color-on-primary);
+    --md-filled-tonal-button-hover-label-text-color: var(--md-sys-color-on-primary);
+    --md-filled-tonal-button-focus-label-text-color: var(--md-sys-color-on-primary);
+    --md-filled-tonal-button-pressed-label-text-color: var(--md-sys-color-on-primary);
+  }
+  .choices.root { grid-template-columns: repeat(7, 1fr); gap: 5px; }
+  .choices.root .choice { --md-filled-tonal-button-leading-space: 0; --md-filled-tonal-button-trailing-space: 0; --md-filled-tonal-button-label-text-size: 1.15rem; }
+  .acc-picker { margin-bottom: 8px; --md-outlined-segmented-button-label-text-size: 1.3rem; }
+  .answer-label { color: var(--md-sys-color-on-surface-variant); margin: 10px 0 6px; }
   .pill { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-radius: 999px; padding: 4px 10px; font-size: .8rem; }
 
   /* Keyboard */

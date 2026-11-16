@@ -1,19 +1,26 @@
-// Sight reading: a short made-up melody in a random key. Play each note in order, on a MIDI keyboard or
-// the keys on screen. A wrong note doesn't move you on; a new melody comes up when you finish.
+// Sight reading: a short made-up tune in a random key, with quarter and half notes plus optional 8th notes,
+// rests and triplets. Two modes:
+// - Check my notes: play each note in order on a MIDI keyboard or the keys on screen. Timing isn't checked.
+//   A wrong note doesn't move you on, and a new tune comes up when you finish.
+// - Just practice: nothing is checked or saved. The tune stays until you ask for a new one.
 
 import { keysUpTo, parseKey, stepName, pretty } from '../theory.js';
-import { makeMelody } from '../reading.js';
+import { makeSightReading } from '../reading.js';
 import { record } from '../srs.js';
 import { onNote } from '../midi.js';
 import * as store from '../store.js';
-import { h, card, hint, button, segmented, drawStaff, keyboard, midiHint } from '../ui.js';
+import { h, card, hint, button, segmented, chips, drawStaff, keyboard, midiHint } from '../ui.js';
 
-const DEFAULTS = { clef: 'treble', length: '8', range: '2' };
+const DEFAULTS = { clef: 'treble', bars: '2', range: '2', mode: 'quiz', eighths: true, rests: true, triplets: true };
 
 export function mount(root) {
-  const s = { ...DEFAULTS, ...store.get('read.melody', {}) };
+  const saved = store.get('read.melody', {});
+  // Version 5 set the length in notes (4 or 8) instead of bars.
+  if (!saved.bars && saved.length) saved.bars = saved.length === '4' ? '1' : '2';
+  const s = { ...DEFAULTS, ...saved };
+  delete s.length;
   const save = () => store.set('read.melody', s);
-  // Each note counts toward the note-reading stats, so melodies feed "My weak spots" too.
+  // In "Check my notes", each note counts toward the note-reading stats, so tunes feed "My weak spots" too.
   const noteStats = store.get('notes.stats', {});
   let mel = null;
   let idx = 0;
@@ -29,22 +36,33 @@ export function mount(root) {
   const status = h('p', { class: 'md-typescale-title-medium prompt' });
   const feedback = h('p', { class: 'feedback md-typescale-body-large', 'aria-live': 'polite' });
   const kbHost = h('div');
+  const modeHint = hint('');
+  const quiz = () => s.mode === 'quiz';
 
   function draw() {
-    const notes = mel.notes.map((n, i) => ({
-      steps: [n.step],
-      duration: 'q',
-      color: i < idx ? 'done' : i === idx && !done ? (wrongAt === i ? 'wrong' : 'current') : null,
-    }));
-    const rows = [];
-    for (let i = 0; i < notes.length; i += 4) rows.push(notes.slice(i, i + 4));
-    drawStaff(staffBox, { clef: s.clef, keySig: mel.keyId, rows, width: 300 });
+    const rows = mel.bars.map((bar) => bar.map((e) => ({
+      rest: e.rest,
+      steps: e.rest ? [] : [mel.notes[e.note].step],
+      duration: e.dur,
+      beam: e.beam,
+      tuplet: e.tuplet,
+      // Only the note to play (and a wrong try) is colored. Notes already played stay black.
+      color: quiz() && !done && e.note === idx ? (wrongAt === idx ? 'wrong' : 'current') : null,
+    })));
+    drawStaff(staffBox, { clef: s.clef, keySig: mel.keyId, rows, width: 340, timeSig: '4/4', endBar: true });
   }
 
   function showStatus() {
-    const k = parseKey(mel.keyId);
+    const key = pretty(parseKey(mel.keyId).tonic) + ' major';
+    if (!quiz()) { status.textContent = key; return; }
     const where = done ? 'done' : `note ${idx + 1} of ${mel.notes.length}`;
-    status.textContent = `${pretty(k.tonic)} major \u00B7 ${where} \u00B7 ${mistakes} ${mistakes === 1 ? 'mistake' : 'mistakes'}`;
+    status.textContent = `${key} \u00B7 ${where} \u00B7 ${mistakes} ${mistakes === 1 ? 'mistake' : 'mistakes'}`;
+  }
+
+  function showModeHint() {
+    modeHint.textContent = quiz()
+      ? 'Play each note in order. Timing isn\'t checked. The note to play is blue, and a wrong note turns red without moving you on.'
+      : 'Nothing is checked or saved. Play it as many times as you like, then tap New melody.';
   }
 
   function buildKeyboard() {
@@ -53,11 +71,9 @@ export function mount(root) {
     kbHost.replaceChildren(kb.el);
   }
 
-  function next() {
+  // Start the current tune again from the first note (used when switching modes).
+  function restart() {
     clearTimeout(timer);
-    const keys = keysUpTo(Number(s.range), false);
-    const keyId = keys[Math.floor(Math.random() * keys.length)].id;
-    mel = makeMelody({ clef: s.clef, keyId, length: Number(s.length) });
     idx = 0;
     mistakes = 0;
     firstTry = true;
@@ -66,17 +82,25 @@ export function mount(root) {
     noteStart = performance.now();
     feedback.textContent = '';
     feedback.className = 'feedback md-typescale-body-large';
+    showModeHint();
     draw();
     showStatus();
+  }
+
+  function next() {
+    const keys = keysUpTo(Number(s.range), false);
+    const keyId = keys[Math.floor(Math.random() * keys.length)].id;
+    mel = makeSightReading({ clef: s.clef, keyId, bars: Number(s.bars), eighths: s.eighths, rests: s.rests, triplets: s.triplets });
+    restart();
     requestAnimationFrame(() => {
-      // Center the keys on the melody's range, so every note is usually in view without pointing at the next one.
+      // Center the keys on the tune's range, so every note is usually in view without pointing at the next one.
       const ms = mel.notes.map((n) => n.midi);
       if (kb) kb.scrollTo(Math.round((Math.min(...ms) + Math.max(...ms)) / 2));
     });
   }
 
   function input(m) {
-    if (!mel || done) return;
+    if (!mel || done || !quiz()) return;
     const target = mel.notes[idx];
     if (m === target.midi) {
       const id = `${s.clef}:${stepName(target.step)}`;
@@ -111,13 +135,20 @@ export function mount(root) {
   root.append(
     card('Play the melody', staffBox, status, feedback, kbHost,
       h('div', { class: 'actions' }, button('New melody', next, 'tonal')),
-      hint('Play each note in order. The note to play is colored, and a wrong note turns red without moving you on.'),
+      modeHint,
       midiHint('Your MIDI keyboard works here.')),
     card('Practice settings',
+      h('p', { class: 'label md-typescale-label-large' }, 'Mode'),
+      segmented([{ value: 'quiz', label: 'Check my notes' }, { value: 'free', label: 'Just practice' }], s.mode, (v) => { s.mode = v; save(); restart(); }),
       h('p', { class: 'label md-typescale-label-large' }, 'Clef'),
       segmented([{ value: 'treble', label: 'Treble' }, { value: 'bass', label: 'Bass' }], s.clef, (v) => { s.clef = v; save(); buildKeyboard(); next(); }),
       h('p', { class: 'label md-typescale-label-large' }, 'Length'),
-      segmented([{ value: '4', label: '4 notes' }, { value: '8', label: '8 notes' }], s.length, (v) => { s.length = v; save(); next(); }),
+      segmented([{ value: '1', label: '1 bar' }, { value: '2', label: '2 bars' }, { value: '4', label: '4 bars' }], s.bars, (v) => { s.bars = v; save(); next(); }),
+      h('p', { class: 'label md-typescale-label-large' }, 'Rhythms'),
+      chips([{ value: 'eighths', label: '8th notes' }, { value: 'rests', label: 'Rests' }, { value: 'triplets', label: 'Triplets' }],
+        ['eighths', 'rests', 'triplets'].filter((k) => s[k]),
+        (v) => { s.eighths = v.includes('eighths'); s.rests = v.includes('rests'); s.triplets = v.includes('triplets'); save(); next(); }),
+      hint('Quarter and half notes are always included.'),
       h('p', { class: 'label md-typescale-label-large' }, 'Sharps or flats in the key, up to'),
       segmented([{ value: '0', label: 'None' }, { value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '4' }], s.range, (v) => { s.range = v; save(); next(); }),
     ),

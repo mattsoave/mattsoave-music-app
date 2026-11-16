@@ -12,7 +12,7 @@ import { mountFeedback } from './feedback.js';
 import { importBackupText } from './views/songs.js';
 import { initSound } from './sound.js';
 
-const VERSION = 5;
+const VERSION = 6;
 
 const ICON = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const TABS = [

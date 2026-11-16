@@ -168,3 +168,72 @@ export function makeMelody({ clef, keyId, length = 8, rand = Math.random }) {
   });
   return { keyId, notes };
 }
+
+// ---- Rhythm ----
+
+/** How many beats (quarter notes) an event lasts. Triplet 8ths are a third of a beat each. */
+export const beatsOf = (ev) => (ev.tuplet !== null && ev.tuplet !== undefined ? 1 / 3 : { h: 2, q: 1, 8: 0.5 }[ev.dur]);
+
+/**
+ * Bars of 4/4 rhythm, one beat at a time: quarter and half notes always, plus 8th notes, rests and
+ * triplets when they are turned on. Each event is { dur: 'h' | 'q' | '8', rest, beam, tuplet }, where
+ * beam and tuplet are group numbers (or null) shared by the notes drawn together. At most one rest and one
+ * triplet per bar keeps it readable, and the last beat is always a note so the tune can end on the tonic.
+ */
+export function makeRhythm({ bars = 2, eighths = true, rests = true, triplets = true, rand = Math.random } = {}) {
+  let group = 0;
+  const ev = (dur, extra = {}) => ({ dur, rest: false, beam: null, tuplet: null, ...extra });
+  const PATTERNS = {
+    h: () => [ev('h')],
+    q: () => [ev('q')],
+    pair: () => { const g = ++group; return [ev('8', { beam: g }), ev('8', { beam: g })]; },
+    trip: () => { const g = ++group; return [0, 1, 2].map(() => ev('8', { beam: g, tuplet: g })); },
+    qRest: () => [ev('q', { rest: true })],
+    restNote: () => [ev('8', { rest: true }), ev('8')],
+    noteRest: () => [ev('8'), ev('8', { rest: true })],
+  };
+  const out = [];
+  for (let b = 0; b < bars; b++) {
+    const lastBar = b === bars - 1;
+    const bar = [];
+    let restsUsed = 0;
+    let tripsUsed = 0;
+    let beat = 0;
+    while (beat < 4) {
+      if (lastBar && beat === 3) { bar.push(ev('q')); beat++; continue; }
+      const choices = [];
+      const add = (w, name) => choices.push([w, name]);
+      if (beat % 2 === 0) add(lastBar && beat === 2 ? 2.5 : 1, 'h'); // a half note starts on beat 1 or 3
+      add(3, 'q');
+      if (eighths) add(2.5, 'pair');
+      if (triplets && tripsUsed < 1) add(1.2, 'trip');
+      if (rests && restsUsed < 1) {
+        add(0.8, 'qRest');
+        if (eighths) { add(0.6, 'restNote'); add(0.3, 'noteRest'); }
+      }
+      let r = rand() * choices.reduce((a, c) => a + c[0], 0);
+      let name = choices[choices.length - 1][1];
+      for (const [w, n] of choices) { r -= w; if (r <= 0) { name = n; break; } }
+      if (name === 'trip') tripsUsed++;
+      if (['qRest', 'restNote', 'noteRest'].includes(name)) restsUsed++;
+      bar.push(...PATTERNS[name]());
+      beat += name === 'h' ? 2 : 1;
+    }
+    out.push(bar);
+  }
+  return out;
+}
+
+/**
+ * A sight-reading tune: a rhythm (see makeRhythm) with a melody line laid over its notes.
+ * Returns { keyId, notes, bars }: notes are the pitches to play in order, and each non-rest event in bars
+ * has `note`, its index into notes.
+ */
+export function makeSightReading({ clef, keyId, bars = 2, eighths = true, rests = true, triplets = true, rand = Math.random }) {
+  const rhythm = makeRhythm({ bars, eighths, rests, triplets, rand });
+  const count = rhythm.flat().filter((e) => !e.rest).length;
+  const { notes } = makeMelody({ clef, keyId, length: count, rand });
+  let i = 0;
+  const laid = rhythm.map((bar) => bar.map((e) => ({ ...e, note: e.rest ? null : i++ })));
+  return { keyId, notes, bars: laid };
+}

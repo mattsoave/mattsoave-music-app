@@ -1,6 +1,6 @@
 // Small UI helpers shared by every screen: element builder, Material controls, staff drawing, keyboard.
 
-import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental } from './vendor/vexflow.js';
+import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Beam, Tuplet, BarlineType } from './vendor/vexflow.js';
 import { stepVexKey, pretty } from './theory.js';
 import { playNote } from './audio.js';
 import { devices, onDevicesChange } from './midi.js';
@@ -133,18 +133,24 @@ const ACCIDENTAL = { 1: '#', '-1': 'b', 0: 'n' };
 function noteColors() {
   const cs = getComputedStyle(document.documentElement);
   const v = (name) => cs.getPropertyValue(name).trim();
-  return { current: v('--note-current'), done: v('--note-done'), wrong: v('--note-wrong') };
+  return { current: v('--note-current'), wrong: v('--note-wrong') };
 }
+
+// Where a rest sits: the middle line of the staff.
+const REST_KEY = { treble: 'b/4', bass: 'd/3' };
 
 /**
  * Draw a staff. The SVG scales to the width of its container. Options:
  * - clef: 'treble' or 'bass'; keySig: a key id such as 'D' or 'Bm'
  * - step: one whole note (a step number), or
- * - notes: [{ steps: [step], accs: [1, -1, 0 or null], duration: 'w' | 'h' | 'q', color: 'current' | 'done' | 'wrong' }]
- *   Each staff holds exactly four beats: one whole note, two half notes, or four quarter notes.
+ * - notes: [{ steps: [step], accs: [1, -1, 0 or null], duration: 'w' | 'h' | 'q' | '8', rest, beam, tuplet, color }]
+ *   Each staff holds exactly four beats. `rest: true` draws a rest instead of a note. Notes that share a `beam`
+ *   number are beamed together, and notes that share a `tuplet` number are drawn as a triplet. `color` is
+ *   'current' or 'wrong'.
  * - rows: several lists of notes, drawn as staves stacked under each other.
+ * - timeSig: such as '4/4', shown on the first staff. endBar: draw the closing double bar on the last staff.
  */
-export function drawStaff(container, { clef = 'treble', step = null, keySig = null, notes = null, rows = null, width = null } = {}) {
+export function drawStaff(container, { clef = 'treble', step = null, keySig = null, notes = null, rows = null, width = null, timeSig = null, endBar = false } = {}) {
   clear(container);
   const lines = rows || [notes || (step !== null ? [{ steps: [step], duration: 'w' }] : [])];
   const w = width || (keySig ? 260 : 220);
@@ -160,9 +166,12 @@ export function drawStaff(container, { clef = 'treble', step = null, keySig = nu
     const stave = new Stave(4, top + row * rowH, w - 8);
     stave.addClef(clef);
     if (keySig) stave.addKeySignature(keySig);
+    if (timeSig && row === 0) stave.addTimeSignature(timeSig);
+    if (endBar && row === lines.length - 1) stave.setEndBarType(BarlineType.END);
     stave.setContext(ctx).draw();
     if (!line.length) return;
     const vfNotes = line.map((n) => {
+      if (n.rest) return new StaveNote({ keys: [REST_KEY[clef]], duration: (n.duration || 'q') + 'r', clef });
       const order = n.steps.map((s, i) => ({ s, a: n.accs ? n.accs[i] : null })).sort((x, y) => x.s - y.s);
       const sn = new StaveNote({ keys: order.map((o) => stepVexKey(o.s)), duration: n.duration || 'w', clef, autoStem: true });
       order.forEach((o, i) => { if (o.a !== null && o.a !== undefined) sn.addModifier(new Accidental(ACCIDENTAL[o.a]), i); });
@@ -174,11 +183,28 @@ export function drawStaff(container, { clef = 'treble', step = null, keySig = nu
       }
       return sn;
     });
+    const groupsOf = (key) => {
+      const m = new Map();
+      line.forEach((n, i) => {
+        if (n[key] === null || n[key] === undefined) return;
+        if (!m.has(n[key])) m.set(n[key], []);
+        m.get(n[key]).push(vfNotes[i]);
+      });
+      return [...m.values()];
+    };
+    // Beams first, since they settle which way the stems point. The triplet "3" then goes on the stem side.
+    // Both have to exist before the notes go into the voice, because a triplet changes how long its notes last.
+    const beams = groupsOf('beam').map((g) => new Beam(g, true));
+    const tuplets = groupsOf('tuplet').map((g) => new Tuplet(g, {
+      location: g[0].getStemDirection() < 0 ? Tuplet.LOCATION_BOTTOM : Tuplet.LOCATION_TOP,
+    }));
     const voice = new Voice({ numBeats: 4, beatValue: 4 });
     voice.addTickables(vfNotes);
     const room = vfNotes.length === 1 ? 80 : Math.max(80, w - stave.getNoteStartX() - 24);
     new Formatter().joinVoices([voice]).format([voice], room);
     voice.draw(ctx, stave);
+    beams.forEach((b) => b.setContext(ctx).draw());
+    tuplets.forEach((t) => t.setContext(ctx).draw());
   });
   const svg = container.querySelector('svg');
   svg.setAttribute('viewBox', `0 0 ${w} ${ht}`);

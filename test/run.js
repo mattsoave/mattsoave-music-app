@@ -164,6 +164,47 @@ ok('melodies stay in range, follow the key and end on the tonic', () => {
   }
   assert.equal(R.makeMelody({ clef: 'treble', keyId: 'G', length: 4, rand }).notes.length, 4);
 });
+ok('rhythms fill every bar and follow the options', () => {
+  const rand = lcg(3);
+  const seen = { pair: 0, trip: 0, rest: 0, h: 0 };
+  for (let k = 0; k < 300; k++) {
+    const bars = 1 + (k % 4);
+    const opts = { eighths: k % 5 !== 0, rests: k % 7 !== 0, triplets: k % 3 !== 0 };
+    const rhythm = R.makeRhythm({ bars, ...opts, rand });
+    assert.equal(rhythm.length, bars);
+    for (const bar of rhythm) {
+      assert.ok(Math.abs(bar.reduce((a, e) => a + R.beatsOf(e), 0) - 4) < 1e-9, 'bar is not 4 beats');
+      assert.ok(bar.filter((e) => !e.rest).length >= 2, 'too few notes in a bar');
+      if (!opts.eighths) assert.ok(bar.every((e) => e.dur !== '8' || e.tuplet !== null));
+      if (!opts.rests) assert.ok(bar.every((e) => !e.rest));
+      if (!opts.triplets) assert.ok(bar.every((e) => e.tuplet === null));
+      const groups = new Map();
+      bar.forEach((e) => { if (e.beam !== null) groups.set(e.beam, (groups.get(e.beam) || []).concat(e)); });
+      for (const g of groups.values()) {
+        assert.ok(g.every((e) => e.dur === '8' && !e.rest));
+        assert.equal(g.length, g[0].tuplet !== null ? 3 : 2);
+      }
+      seen.pair += [...groups.values()].filter((g) => g.length === 2).length;
+      seen.trip += [...groups.values()].filter((g) => g.length === 3).length;
+      seen.rest += bar.filter((e) => e.rest).length;
+      seen.h += bar.filter((e) => e.dur === 'h').length;
+    }
+    const last = rhythm[bars - 1][rhythm[bars - 1].length - 1];
+    assert.ok(!last.rest, 'melody ends on a rest');
+  }
+  assert.ok(seen.pair && seen.trip && seen.rest && seen.h, JSON.stringify(seen));
+});
+ok('sight reading lays the tune over the rhythm', () => {
+  const rand = lcg(9);
+  for (let k = 0; k < 50; k++) {
+    const t = R.makeSightReading({ clef: k % 2 ? 'bass' : 'treble', keyId: 'D', bars: 2, rand });
+    const evs = t.bars.flat().filter((e) => !e.rest);
+    assert.equal(evs.length, t.notes.length);
+    assert.deepEqual(evs.map((e) => e.note), t.notes.map((_, i) => i));
+    assert.ok(t.bars.flat().filter((e) => e.rest).every((e) => e.note === null));
+    assert.equal(t.notes[t.notes.length - 1].letter, 'D');
+  }
+});
 
 // ---- chart parsing ----
 const SAMPLE = `https://tabs.ultimate-guitar.com/tab/some-artist/some-song-chords-123
